@@ -79,11 +79,10 @@ NEW_USER_DEFAULTS = {
     "silent_blocked": [],
     "font_style": None,
     "font_auto": False,
-    # auto-reply
     "auto_reply_enabled": False,
     "auto_reply_text": "",
-    "auto_reply_cooldown": 3600,  # seconds – reply same person again only after this
-    "auto_reply_sent_to": {},     # {user_id_str: timestamp}
+    "auto_reply_cooldown": 3600,
+    "auto_reply_sent_to": {},
 }
 
 
@@ -91,13 +90,6 @@ def new_user_record(session_string, phone):
     rec = dict(NEW_USER_DEFAULTS)
     rec["session_string"] = session_string
     rec["phone"] = phone
-    rec["silent_blocked"] = []
-    rec["font_style"] = None
-    rec["font_auto"] = False
-    rec["auto_reply_enabled"] = False
-    rec["auto_reply_text"] = ""
-    rec["auto_reply_cooldown"] = 3600
-    rec["auto_reply_sent_to"] = {}
     return rec
 
 
@@ -216,29 +208,23 @@ def register_autoreply_handler(uid, c):
         try:
             if not event.is_private:
                 return
-            # don't reply to ourselves
             me = await c.get_me()
             if event.sender_id == me.id:
                 return
-            # don't reply to bots
             sender = await event.get_sender()
             if getattr(sender, "bot", False):
                 return
-            # check enabled
             u = db.get(uid_s, {})
             if not u.get("auto_reply_enabled") or not u.get("auto_reply_text"):
                 return
-            # check blocked list – skip silently blocked users
             if event.sender_id in blocked_ids(uid_s):
                 return
-            # cooldown – don't spam the same person
             now = time.time()
             sent_to = u.get("auto_reply_sent_to", {})
             cooldown = u.get("auto_reply_cooldown", 3600)
             last = sent_to.get(str(event.sender_id), 0)
             if now - last < cooldown:
                 return
-            # send auto-reply
             try:
                 await event.reply(u["auto_reply_text"])
             except FloodWaitError as e:
@@ -251,7 +237,6 @@ def register_autoreply_handler(uid, c):
             except Exception as e:
                 log.warning(f"[{uid}] autoreply send err: {e}")
                 return
-            # record timestamp
             sent_to[str(event.sender_id)] = now
             db[uid_s]["auto_reply_sent_to"] = sent_to
             save_db(db)
@@ -262,7 +247,8 @@ def register_autoreply_handler(uid, c):
     autoreply_handlers[uid] = _handler
 
 
-def unregister_autoreply_handler(uid, c)
+def unregister_autoreply_handler(uid, c):
+    handler = autoreply_handlers.pop(uid, None)
     if handler:
         try:
             c.remove_event_handler(handler, events.NewMessage)
@@ -279,13 +265,11 @@ async def _cmd_tag(event, arg):
             or hasattr(chat, "participants_count") or getattr(chat, "broadcast", False)):
         await event.edit("❌ این دستور فقط توی گروه/کانال کار می‌کنه.")
         return
-
     try:
         participants = await event.client.get_participants(event.chat_id, aggressive=True)
     except Exception as e:
         await event.edit(f"❌ خطا در گرفتن لیست اعضا: `{e}`")
         return
-
     mentions = [
         f"[{p.first_name or p.username or p.id}](tg://user?id={p.id})"
         for p in participants if not p.bot and not p.deleted
@@ -293,7 +277,6 @@ async def _cmd_tag(event, arg):
     if not mentions:
         await event.edit("❌ عضوی پیدا نشد.")
         return
-
     await event.delete()
     batch_size = 5
     for i in range(0, len(mentions), batch_size):
@@ -302,8 +285,7 @@ async def _cmd_tag(event, arg):
         try:
             await event.client.send_message(event.chat_id, txt, parse_mode="md")
         except FloodWaitError as e:
-            await asyncio):
-    handler = autoreply_handlers.pop(uid, None.sleep(e.seconds + 2)
+            await asyncio.sleep(e.seconds + 2)
         except Exception:
             pass
         await asyncio.sleep(3)
@@ -333,37 +315,53 @@ async def _cmd_ping(event):
 async def _cmd_font(uid, event, arg):
     uid_s = str(uid)
     args = arg.split(maxsplit=1)
-
     if not args:
         styles = "\n".join(f"• `{k}` — {v}" for k, v in FONT_LABELS.items())
         await event.edit(
             "🎨 **راهنمای فونت:**\n\n"
             "`/font <style> متن` — تبدیل یه متن\n"
-            "`/font set <style>` — فعال کردن فونت خودکارn\nنصب برای پیام‌های بعدی\n"
+            "`/font set <style>` — فعال کردن فونت خودکار برای پیام‌های بعدی\n"
             "`/font off` — خاموش کردن حالت خودکار\n\n"
             f"استایل‌ها:\n{styles}"
         )
         return
-
     sub = args[0].lower()
-
     if sub == "off":
         db[uid_s]["font_auto"] = False
         save_db(db)
         await event.edit("✅ فونت خودکار خاموش شد.")
         return
-
     if sub == "set":
         style = args[1].strip() if len(args) > 1 else ""
-        if style notایل نامعتبر.\n`/font` رو بدون آرگومان بزن برای لیست.")
+        if style not in FONT_MAPS:
+            await event.edit("❌ استایل نامعتبر.\n`/font` رو بدون آرگومان بزن برای لیست.")
             return
         db[uid_s]["font_style"] = style
         db[uid_s]["font_auto"] = True
         save_db(db)
-        await event.edit(f"✅ فونت خودکار روی `{style}` فعال شد.\nهر پیامی بفرستی خودکار تبدیل میشه.")
+        await event.edit(f"✅ فونت خودکار روی `{style}` فعال شد.")
         return
+    if sub not in FONT_MAPS:
+        await event.edit("❌ استایل نامعتبر.\n`/font` رو بدون آرگومان بزن برای لیست.")
+        return
+    if len(args) < 2:
+        await event.edit("❌ متنی برای تبدیل نفرستادی.\nمثال: `/font bold سلام`")
+        return
+    await event.edit(apply_font(args[1], sub))
 
-    کن: `pip install deep-translator`")
+
+async def _cmd_translate(event, arg):
+    reply = await event.get_reply_message()
+    target = arg.strip() or "fa"
+    if not reply or not reply.raw_text:
+        await event.edit("❌ باید روی یه پیام متنی ریپلای کنی.\nمثال: ریپلای + `/tr`")
+        return
+    await event.edit("🌐 در حال ترجمه...")
+    try:
+        from deep_translator import GoogleTranslator
+        translated = GoogleTranslator(source="auto", target=target).translate(reply.raw_text)
+    except Exception as e:
+        await event.edit(f"❌ خطا در ترجمه: `{e}`\n\nنصب کن: `pip install deep-translator`")
         return
     await event.edit(f"🌐 **ترجمه:**\n\n{translated}")
 
@@ -390,14 +388,11 @@ async def _cmd_repeat(event, arg):
     if len(args) < 2:
         await event.edit("❌ فرمت: `/r <تعداد> <متن>`\nمثال: `/r 100 سلام`")
         return
-
     count_str = args[0]
     text = args[1]
-
     if not count_str.isdigit():
         await event.edit("❌ تعداد باید عدد باشه.\nمثال: `/r 100 سلام`")
         return
-
     count = int(count_str)
     if count < 1:
         await event.edit("❌ حداقل ۱ بار.")
@@ -405,7 +400,6 @@ async def _cmd_repeat(event, arg):
     if count > 500:
         await event.edit("❌ حداکثر ۵۰۰ بار.")
         return
-
     await event.delete()
     sent = 0
     failed = 0
@@ -418,35 +412,19 @@ async def _cmd_repeat(event, arg):
             await asyncio.sleep(e.seconds + 2)
             try:
                 await event.client.send_message(event.chat_id, text)
- in FONT_MAPS:
-            await event.edit("❌ است if sub not in FONT_MAPS:
-        await event.edit("❌ استایل نامعتبر.\n`/font` رو بدون آرگومان بزن برای لیست.")
-        return
-    if len(args) < 2:
-        await event.edit("❌ متنی برای تبدیل نفرستادی.\nمثال: `/font bold سلام`")
-        return
-    await event.edit(apply_font(args[1], sub))
+                sent += 1
+            except Exception:
+                failed += 1
+        except Exception as e:
+            log.warning(f"[repeat] send err: {e}")
+            failed += 1
+        await asyncio.sleep(0.4)
+    log.info(f"[repeat] done: {sent} sent, {failed} failed")
 
 
-async def _cmd_translate(event, arg):
-    reply = await event.get_reply_message()
-    target = arg.strip() or "fa"
-    if not reply or not reply.raw_text:
-        await event.edit("❌ باید روی یه پیام متنی ریپلای کنی.\nمثال: ریپلای + `/tr`")
-        return
-    await event.edit("🌐 در حال ترجمه...")
-    try:
-        from deep_translator import GoogleTranslator
-        translated = GoogleTranslator(source="auto", target=target).translate(reply.raw_text)
-    except Exception as e:
-        await event.edit(f"❌ خطا در ترجمه: `{e}`\sent} sent, {failed} failed")
-
-
-# ──── NEW: /rr command (quick toggle auto-reply from self-account) ────
 async def _cmd_autoreply(uid, event, arg):
     uid_s = str(uid)
     arg = arg.strip().lower()
-
     if not arg:
         u = db.get(uid_s, {})
         on = u.get("auto_reply_enabled", False)
@@ -463,7 +441,6 @@ async def _cmd_autoreply(uid, event, arg):
             f"`/rr متن پیام` — تنظیم متن و روشن کردن"
         )
         return
-
     if arg == "on":
         if not db[uid_s].get("auto_reply_text"):
             await event.edit("❌ اول متن پاسخ رو تنظیم کن.\nمثال: `/rr الان در دسترس نیستم`")
@@ -472,25 +449,14 @@ async def _cmd_autoreply(uid, event, arg):
         save_db(db)
         await event.edit("✅ پاسخ خودکار روشن شد.")
         return
-
     if arg == "off":
         db[uid_s]["auto_reply_enabled"] = False
         save_db(db)
         await event.edit("❌ پاسخ خودکار خاموش شد.")
         return
-
-    # any other text = set as auto-reply text and enable
     db[uid_s]["auto_reply_text"] = arg[:500]
     db[uid_s]["auto_reply_enabled"] = True
-                   sent += 1
-            except Exception:
-                failed += 1
-        except Exception as e:
-            log.warning(f"[repeat] send err: {e}")
-            failed += 1
-        await asyncio.sleep(0.4)
-
-    log.info(f"[repeat] done: { save_db(db)
+    save_db(db)
     await event.edit(f"✅ پاسخ خودکار تنظیم شد و روشن شد:\n\n`{arg[:500]}`")
 
 
@@ -502,7 +468,6 @@ def register_command_handlers(uid, c):
         text = event.raw_text or ""
         uid_s = str(uid)
 
-        # skip messages sent to bot accounts
         if event.is_private:
             try:
                 chat = await event.get_chat()
@@ -511,7 +476,6 @@ def register_command_handlers(uid, c):
             except Exception:
                 pass
 
-        # skip if user is in setup/settings conversation
         if uid in conv or uid in setting_mode:
             return
 
@@ -544,7 +508,6 @@ def register_command_handlers(uid, c):
                     pass
             return
 
-        # auto-font mode
         u = db.get(uid_s, {})
         if u.get("font_auto") and u.get("font_style") and text.strip():
             styled = apply_font(text, u["font_style"])
@@ -573,25 +536,20 @@ async def silent_block_user(uid, target):
     c = clients.get(uid)
     if not c:
         return False, "❌ اول باید سلف‌بات فعال باشه."
-
     try:
         entity = await c.get_entity(int(target) if str(target).lstrip("-").isdigit() else target)
     except Exception as e:
         return False, f"❌ کاربر پیدا نشد: `{e}`"
-
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
     name = name.strip() or (getattr(entity, "username", "") or str(tid))
-
     lst = db[uid_s].setdefault("silent_blocked", [])
     if any(b["id"] == tid for b in lst):
         return False, f"⚠️ `{name}` از قبل مسدوده."
-
     try:
         await c(BlockRequest(id=entity))
     except Exception as e:
         log.warning(f"[{uid}] native block failed: {e}")
-
     lst.append({"id": tid, "name": name})
     save_db(db)
     return True, f"🚫 `{name}` مسدود شد.\nپیام‌های جدیدش فوراً پاک میشن."
@@ -604,14 +562,18 @@ async def silent_unblock_user(uid, target_id):
     entry = next((b for b in lst if b["id"] == target_id), None)
     if not entry:
         return False, "❌ پیدا نشد."
-
     if c:
         try:
             await c(UnblockRequest(id=target_id))
         except Exception as e:
             log.warning(f"[{uid}] native unblock failed: {e}")
-
     lst[:] = [b for b in lst if b["id"] != target_id]
+    save_db(db)
+    return True, f"✅ `{entry['name']}` آنبلاک شد."
+
+
+# ═══════════════════════════════════════════════════
+# SELFBOT ENGINE
 # ═══════════════════════════════════════════════════
 async def selfbot_worker(uid, bot_ref):
     uid_s = str(uid)
@@ -629,13 +591,7 @@ async def selfbot_worker(uid, bot_ref):
         db[uid_s]["orig_first"] = me.first_name or ""
         db[uid_s]["orig_last"] = me.last_name or ""
         db[uid_s]["orig_about"] = full.full_user.about or ""
-        db[uid    save_db(db)
-    return True, f"✅ `{entry['name']}` آنبلاک شد."
-
-
-# ═══════════════════════════════════════════════════
-# SELFBOT ENGINE
-_s]["active"] = True
+        db[uid_s]["active"] = True
         save_db(db)
         log.info(f"[{uid}] ON: {me.first_name}")
 
@@ -657,7 +613,7 @@ _s]["active"] = True
                     last_name=db[uid_s].get("orig_last", ""),
                     about=db[uid_s].get("orig_about", ""),
                 ))
-                log.info(f"[{uid}] → {name}")
+                log.info(f"[{uid}] -> {name}")
             except FloodWaitError as e:
                 log.warning(f"[{uid}] Flood: {e.seconds}s")
                 await asyncio.sleep(e.seconds + 5)
@@ -667,16 +623,13 @@ _s]["active"] = True
                 db[uid_s]["active"] = False
                 save_db(db)
                 try:
-                    await bot_ref.send_message(
-                        uid, "❌ سشن منقضی شده.\n/start رو بزن."
-                    )
+                    await bot_ref.send_message(uid, "❌ سشن منقضی شده.\n/start رو بزن.")
                 except Exception:
                     pass
                 break
             except Exception as e:
                 log.error(f"[{uid}] err: {e}")
-            await asyncio.sleep غیرفعال"
-(u.get("update_interval", DEFAULT_INT))
+            await asyncio.sleep(u.get("update_interval", DEFAULT_INT))
     except asyncio.CancelledError:
         log.info(f"[{uid}] cancelled")
         try:
@@ -757,20 +710,17 @@ async def run_bot():
     me = await bot.get_me()
     log.info(f"Bot: @{me.username}")
 
-    # restart saved selfbots
     for uid_s, u in db.items():
         if u.get("active") and u.get("session_string"):
-            uid = int(uid_s(uid_s, {})
-        if not u)
+            uid = int(uid_s)
             log.info(f"Restart selfbot {uid}")
             tasks[uid] = asyncio.create_task(selfbot_worker(uid, bot))
 
-    # ── helpers ──────────────────────────────────
     def main_kb(uid):
         uid_s = str(uid)
-        u = db.get.get("session_string"):
+        u = db.get(uid_s, {})
+        if not u.get("session_string"):
             return [[Button.inline("🚀 ساخت سلف‌بات", b"setup")]]
-
         on = uid in tasks and not tasks[uid].done()
         if on:
             return [
@@ -797,8 +747,34 @@ async def run_bot():
         if not u.get("session_string"):
             return "❌ سلف‌بات نداری"
         on = uid in tasks and not tasks[uid].done()
-        s = "✅ فعال" if on else "⏸        tz = u ── auto-reply helpers ──────────────────────
-    def autoreply_text(uid):
+        s = "✅ فعال" if on else "⏸ غیرفعال"
+        tz = u.get("timezone", DEFAULT_TZ)
+        now = datetime.now(pytz.timezone(tz)).strftime("%H:%M")
+        return f"⏰ {now} | {s}"
+
+    def block_kb(uid):
+        uid_s = str(uid)
+        lst = db.get(uid_s, {}).get("silent_blocked", [])
+        rows = [[Button.inline("➕ افزودن (یوزرنیم/آیدی)", b"block_add")]]
+        for b in lst[:20]:
+            rows.append([Button.inline(f"❌ آنبلاک: {b['name']}", f"block_del:{b['id']}".encode())])
+        rows.append([Button.inline("◀️ بازگشت", b"back")])
+        return rows
+
+    def block_text(uid):
+        uid_s = str(uid)
+        lst = db.get(uid_s, {}).get("silent_blocked", [])
+        if not lst:
+            return (
+                "━━━ 🚫 بلاک مخفی ━━━\n\n"
+                "کسی مسدود نیست.\n\n"
+                "با این قابلیت هر پیام جدیدی که از یه نفر خاص بیاد "
+                "فوراً پاک میشه و اون شخص عملاً مسدود میشه."
+            )
+        names = "\n".join(f"• {b['name']}" for b in lst)
+        return f"━━━ 🚫 بلاک مخفی ━━━\n\nمسدودها:\n{names}"
+
+    def autoreply_info(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
         on = u.get("auto_reply_enabled", False)
@@ -810,8 +786,8 @@ async def run_bot():
             "━━━ 📨 پاسخ خودکار ━━━\n\n"
             f"وضعیت: {status}\n"
             f"متن پاسخ:\n`{txt or 'تنظیم نشده'}`\n\n"
-            f"⏱ کول‌داون: `{cd}` ثانیه (هر نفر بعد از این مدت دوباره پاسخ می‌گیره)\n"
-            f"📊 تعداد پاسخ‌داده‌شده‌ها: `{count}`"
+            f"⏱ کول‌داون: `{cd}` ثانیه\n"
+            f"📊 تعداد پاسخ‌ها: `{count}`"
         )
 
     def autoreply_kb(uid):
@@ -835,10 +811,7 @@ async def run_bot():
         uid_s = str(uid)
         u = db.get(uid_s, {})
         if u.get("session_string"):
-            await event.respond(
-                f"{status_text(uid)}\n\nاز منو استفاده کن:",
-                buttons=main_kb(uid),
-            )
+            await event.respond(f"{status_text(uid)}\n\nاز منو استفاده کن:", buttons=main_kb(uid))
         else:
             await event.respond(
                 "━━━ 🤖 سلف‌بات ساز ━━━\n\n"
@@ -859,8 +832,7 @@ async def run_bot():
         uid = event.sender_id
         conv[uid] = {"step": "phone"}
         await event.respond(
-            "📱 **شماره تلفنت رو بفرست:**\n\n"
-            "مثال: `+989123456789`",
+            "📱 **شماره تلفنت رو بفرست:**\n\nمثال: `+989123456789`",
             buttons=[[Button.inline("❌ لغو", b"cancel")]],
         )
 
@@ -956,11 +928,7 @@ async def run_bot():
         await event.answer()
         uid = event.sender_id
         setting_mode[uid] = "name"
-        await event.respond(
-            "📛 اسم جدید رو بفرست:\n"
-            "مثال: `علی`",
-            buttons=[[Button.inline("❌ لغو", b"cancel")]],
-        )
+        await event.respond("📛 اسم جدید رو بفرست:\nمثال: `علی`", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"set_tz"))
     async def cb_set_tz(event):
@@ -968,9 +936,7 @@ async def run_bot():
         uid = event.sender_id
         setting_mode[uid] = "tz"
         await event.respond(
-            "🌍 تایم‌زون رو بفرست:\n\n"
-            "`Asia/Tehran`\n`Asia/Dubai`\n`Europe/London`\n"
-            "`America/New_York`\n`Asia/Kabul`",
+            "🌍 تایم‌زون رو بفرست:\n\n`Asia/Tehran`\n`Asia/Dubai`\n`Europe/London`\n`America/New_York`",
             buttons=[[Button.inline("❌ لغو", b"cancel")]],
         )
 
@@ -979,22 +945,14 @@ async def run_bot():
         await event.answer()
         uid = event.sender_id
         setting_mode[uid] = "interval"
-        await event.respond(
-            "⏱ بازه آپدیت (ثانیه):\n"
-            "توصیه: `60` — حداقل: `30`",
-            buttons=[[Button.inline("❌ لغو", b"cancel")]],
-        )
+        await event.respond("⏱ بازه آپدیت (ثانیه):\nتوصیه: `60` — حداقل: `30`", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"set_sep"))
     async def cb_set_sep(event):
         await event.answer()
         uid = event.sender_id
         setting_mode[uid] = "sep"
-        await event.respond(
-            "🔗 جداکننده:\n"
-            "` ǀ ` ` • ` ` — ` ` | ` ` ◆ `",
-            buttons=[[Button.inline("❌ لغو", b"cancel")]],
-        )
+        await event.respond("🔗 جداکننده:\n` ǀ ` ` • ` ` — ` ` | ` ` ◆ `", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     # ── silent block menu ────────────────────────
     @bot.on(events.CallbackQuery(data=b"block_menu"))
@@ -1009,8 +967,7 @@ async def run_bot():
         uid = event.sender_id
         setting_mode[uid] = "block_add"
         await event.respond(
-            "🚫 یوزرنیم (بدون @) یا آیدی عددی شخص رو بفرست:\n\n"
-            "مثال: `John_doe` یا `123456789`",
+            "🚫 یوزرنیم (بدون @) یا آیدی عددی رو بفرست:\nمثال: `John_doe` یا `123456789`",
             buttons=[[Button.inline("❌ لغو", b"cancel")]],
         )
 
@@ -1028,7 +985,7 @@ async def run_bot():
     async def cb_autoreply_menu(event):
         await event.answer()
         uid = event.sender_id
-        await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+        await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"ar_on"))
     async def cb_ar_on(event):
@@ -1039,12 +996,12 @@ async def run_bot():
             return
         if not db[uid_s].get("auto_reply_text"):
             await event.respond("❌ اول متن پاسخ رو تنظیم کن.")
-            await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+            await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
             return
         db[uid_s]["auto_reply_enabled"] = True
         save_db(db)
         await event.respond("✅ پاسخ خودکار روشن شد.")
-        await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+        await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"ar_off"))
     async def cb_ar_off(event):
@@ -1056,7 +1013,7 @@ async def run_bot():
         db[uid_s]["auto_reply_enabled"] = False
         save_db(db)
         await event.respond("❌ پاسخ خودکار خاموش شد.")
-        await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+        await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"ar_set_text"))
     async def cb_ar_set_text(event):
@@ -1065,8 +1022,7 @@ async def run_bot():
         setting_mode[uid] = "ar_text"
         await event.respond(
             "✏️ متن پاسخ خودکار رو بفرست:\n\n"
-            "مثال:\n"
-            "`سلام، الان در دسترس نیستم. بعداً پیام بده 🙏`\n\n"
+            "مثال:\n`سلام، الان در دسترس نیستم. بعداً پیام بده 🙏`\n\n"
             "حداکثر ۵۰۰ کاراکتر.",
             buttons=[[Button.inline("❌ لغو", b"cancel")]],
         )
@@ -1078,8 +1034,6 @@ async def run_bot():
         setting_mode[uid] = "ar_cooldown"
         await event.respond(
             "⏱ کول‌داون رو به ثانیه بفرست:\n\n"
-            "یعنی هر نفر چند ثانیه یه بار پاسخ بگیره.\n"
-            "مثال:\n"
             "`3600` = هر ۱ ساعت یه بار\n"
             "`600` = هر ۱۰ دقیقه\n"
             "`0` = هر بار (توصیه نمیشه)\n\n"
@@ -1095,8 +1049,8 @@ async def run_bot():
         if uid_s in db:
             db[uid_s]["auto_reply_sent_to"] = {}
             save_db(db)
-        await event.respond("🗑 تاریخچه پاسخ‌ها پاک شد.\n(به همه دوباره پاسخ داده میشه)")
-        await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+        await event.respond("🗑 تاریخچه پاک شد.")
+        await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
 
     # ── text handler ────────────────────────────
     @bot.on(events.NewMessage(func=lambda e: e.is_private))
@@ -1106,7 +1060,6 @@ async def run_bot():
         if text.startswith("/"):
             return
 
-        # ── setup conversation ──────────────────
         if uid in conv:
             step = conv[uid]["step"]
 
@@ -1137,11 +1090,7 @@ async def run_bot():
                     return
                 tmp = conv[uid]["temp"]
                 try:
-                    await tmp.sign_in(
-                        phone=conv[uid]["phone"],
-                        code=code,
-                        phone_code_hash=conv[uid]["hash"],
-                    )
+                    await tmp.sign_in(phone=conv[uid]["phone"], code=code, phone_code_hash=conv[uid]["hash"])
                 except Exception as e:
                     if "password" in str(e).lower():
                         conv[uid]["step"] = "2fa"
@@ -1154,7 +1103,6 @@ async def run_bot():
                         pass
                     await event.respond(f"❌ خطا: `{e}`\n/start رو بزن.")
                     return
-
                 ss = tmp.session.save()
                 try:
                     await tmp.disconnect()
@@ -1163,12 +1111,7 @@ async def run_bot():
                 db[str(uid)] = new_user_record(ss, conv[uid]["phone"])
                 save_db(db)
                 conv.pop(uid, None)
-                await event.respond(
-                    "━━━ ✅ سلف‌بات فعال شد! ━━━\n\n"
-                    "اسمت هر دقیقه با ساعت آپدیت میشه!\n"
-                    "از تنظیمات میتونی همه چیز رو عوض کنی.",
-                    buttons=main_kb(uid),
-                )
+                await event.respond("━━━ ✅ سلف‌بات فعال شد! ━━━\n\nاز تنظیمات میتونی همه چیز رو عوض کنی.", buttons=main_kb(uid))
                 await start_sb(uid, bot)
                 return
 
@@ -1179,7 +1122,6 @@ async def run_bot():
                 except Exception as e:
                     await event.respond(f"❌ رمز اشتباه: `{e}`")
                     return
-
                 ss = tmp.session.save()
                 try:
                     await tmp.disconnect()
@@ -1188,15 +1130,10 @@ async def run_bot():
                 db[str(uid)] = new_user_record(ss, conv[uid]["phone"])
                 save_db(db)
                 conv.pop(uid, None)
-                await event.respond(
-                    "━━━ ✅ سلف‌بات فعال شد! ━━━\n\n"
-                    "اسمت هر دقیقه با ساعت آپدیت میشه!",
-                    buttons=main_kb(uid),
-                )
+                await event.respond("━━━ ✅ سلف‌بات فعال شد! ━━━", buttons=main_kb(uid))
                 await start_sb(uid, bot)
                 return
 
-        # ── settings input ──────────────────────
         if uid in setting_mode:
             uid_s = str(uid)
             if uid_s not in db:
@@ -1246,24 +1183,19 @@ async def run_bot():
                 db[uid_s]["auto_reply_text"] = text[:500]
                 save_db(db)
                 setting_mode.pop(uid, None)
-                await event.respond(f"✅ متن پاسخ خودکار تنظیم شد:\n\n`{text[:500]}`")
-                await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+                await event.respond(f"✅ متن پاسخ تنظیم شد.")
+                await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
                 return
             elif mode == "ar_cooldown":
                 need_restart = False
                 if not text.isdigit():
                     await event.respond("❌ عدد بفرست.")
                     return
-                cd = int(text)
-                if cd < 0:
-                    await event.respond("❌ عدد منفی نمیشه.")
-                    return
-                db[uid_s]["auto_reply_cooldown"] = cd
+                db[uid_s]["auto_reply_cooldown"] = int(text)
                 save_db(db)
                 setting_mode.pop(uid, None)
-                cd_show = f"{cd} ثانیه" if cd < 3600 else f"{cd // 3600} ساعت و {(cd % 3600) // 60} دقیقه"
-                await event.respond(f"✅ کول‌داون: {cd_show}")
-                await event.respond(autoreply_text(uid), buttons=autoreply_kb(uid))
+                await event.respond(f"✅ کول‌داون: `{text}` ثانیه")
+                await event.respond(autoreply_info(uid), buttons=autoreply_kb(uid))
                 return
 
             setting_mode.pop(uid, None)
@@ -1277,7 +1209,6 @@ async def run_bot():
                 await event.respond("تنظیمات اعمال شد ✅", buttons=main_kb(uid))
             return
 
-        # ── unknown ─────────────────────────────
         await event.respond("/start رو بزن.", buttons=main_kb(uid))
 
     # ── commands ────────────────────────────────
@@ -1323,34 +1254,17 @@ async def run_bot():
     async def cmd_help(event):
         await event.respond(
             "━━━ 📖 راهنمای ربات کنترل ━━━\n\n"
-            "/start — منوی اصلی\n"
-            "/status — وضعیت\n"
-            "/stop — توقف\n"
-            "/block — مدیریت بلاک مخفی\n"
-            "/help — همین راهنما\n\n"
-            "━━━ مثال خروجی اسم ━━━\n\n"
-            "علی → علی ǀ 14:32\n"
-            "سارا → سارا • 20:15\n\n"
-            "━━━ بلاک مخفی ━━━\n\n"
-            "با /block یا از منو یه نفر رو با یوزرنیم/آیدی مسدود کن.\n"
-            "پیام‌های جدیدش فوراً پاک میشن.\n\n"
-            "━━━ پاسخ خودکار ━━━\n\n"
-            "از منو «📨 پاسخ خودکار» متن و کول‌داون رو تنظیم کن.\n"
-            "وقتی فعال باشه، به هر کسی که پیام بده خودکار جواب میده.\n\n"
-            "━━━ 🛠 دستورات داخل اکانت خودت ━━━\n"
-            "(این‌ها رو مستقیم توی هر چت از گوشی/دسکتاپ خودت تایپ کن)\n\n"
-            "`/tag [متن]` — تگ همه اعضای گروه\n"
+            "/start — منوی اصلی\n/status — وضعیت\n/stop — توقف\n"
+            "/block — مدیریت بلاک مخفی\n/help — همین راهنما\n\n"
+            "━━━ 🛠 دستورات داخل اکانت خودت ━━━\n\n"
+            "`/tag [متن]` — تگ همه اعضا\n"
             "`/pin` (ریپلای) — پین پیام\n"
             "`/ping` — تست اتصال\n"
-            "`/font` — لیست فونت‌ها و راهنما\n"
-            "`/font bold متن` — تبدیل به فونت بولد\n"
-            "`/font set italic` — فونت خودکار برای پیام‌های بعدی\n"
-            "`/tr` (ریپلای) — ترجمه به فارسی\n"
-            "`/r 100 سلام` — ارسال ۱۰۰ بار پیام سلام\n"
-            "`/rr` — وضعیت پاسخ خودکار\n"
-            "`/rr on` / `/rr off` — روشن/خاموش پاسخ خودکار\n"
-            "`/rr متن پیام` — تنظیم متن و روشن کردن\n"
-            "`/del 100` — حذف ۱۰۰ پیام آخر خودت در همین چت",
+            "`/font` — لیست فونت‌ها\n"
+            "`/tr` (ریپلای) — ترجمه\n"
+            "`/r 100 سلام` — ارسال ۱۰۰ بار\n"
+            "`/rr` — پاسخ خودکار\n"
+            "`/del 100` — حذف پیام‌ها",
         )
 
     if ADMIN_ID:
@@ -1363,11 +1277,8 @@ async def run_bot():
             size = DB_FILE.stat().st_size if DB_FILE.exists() else 0
             await event.respond(
                 f"━━━ 📊 آمار ادمین ━━━\n\n"
-                f"👥 کل: {total}\n"
-                f"✅ فعال: {active}\n"
-                f"🔄 اجرا: {running}\n"
-                f"📨 پاسخ خودکار: {ar_on}\n"
-                f"💾 {size / 1024:.1f} KB",
+                f"👥 کل: {total}\n✅ فعال: {active}\n🔄 اجرا: {running}\n"
+                f"📨 پاسخ خودکار: {ar_on}\n💾 {size / 1024:.1f} KB",
             )
 
     log.info("Bot ready!")
