@@ -65,7 +65,7 @@ setting_mode = {}
 block_handlers = {}
 cmd_handlers = {}
 autoreply_handlers = {}
-CONTROL_BOT_ID = None  # set once at startup
+CONTROL_BOT_ID = None
 
 NEW_USER_DEFAULTS = {
     "base_name": "",
@@ -175,8 +175,7 @@ def register_block_handler(uid, c):
         try:
             if not event.is_private:
                 return
-            sender_id = event.sender_id
-            if sender_id in blocked_ids(uid_s):
+            if event.sender_id in blocked_ids(uid_s):
                 try:
                     await event.delete()
                 except Exception as e:
@@ -209,25 +208,19 @@ def register_autoreply_handler(uid, c):
         try:
             if not event.is_private:
                 return
-            # skip messages from the control bot itself
             if CONTROL_BOT_ID and event.sender_id == CONTROL_BOT_ID:
                 return
-            # skip own messages
             me_id = (await c.get_me()).id
             if event.sender_id == me_id:
                 return
-            # skip bots
             sender = await event.get_sender()
             if getattr(sender, "bot", False):
                 return
-            # check enabled
             u = db.get(uid_s, {})
             if not u.get("auto_reply_enabled") or not u.get("auto_reply_text"):
                 return
-            # skip blocked
             if event.sender_id in blocked_ids(uid_s):
                 return
-            # cooldown
             now = time.time()
             sent_to = u.get("auto_reply_sent_to", {})
             cooldown = u.get("auto_reply_cooldown", 3600)
@@ -272,12 +265,12 @@ async def _cmd_tag(event, arg):
     chat = await event.get_chat()
     if not (getattr(chat, "megagroup", False) or getattr(chat, "gigagroup", False)
             or hasattr(chat, "participants_count") or getattr(chat, "broadcast", False)):
-        await event.edit("❌ این دستور فقط توی گروه/کانال کار می‌کنه.")
+        await event.edit("❌ فقط توی گروه/کانال.")
         return
     try:
         participants = await event.client.get_participants(event.chat_id, aggressive=True)
     except Exception as e:
-        await event.edit(f"❌ خطا: `{e}`")
+        await event.edit(f"❌ `{e}`")
         return
     mentions = [
         f"[{p.first_name or p.username or p.id}](tg://user?id={p.id})"
@@ -310,7 +303,7 @@ async def _cmd_pin(event):
         await asyncio.sleep(2)
         await event.delete()
     except Exception as e:
-        await event.edit(f"❌ خطا: `{e}`")
+        await event.edit(f"❌ `{e}`")
 
 
 async def _cmd_ping(event):
@@ -367,7 +360,7 @@ async def _cmd_translate(event, arg):
         from deep_translator import GoogleTranslator
         translated = GoogleTranslator(source="auto", target=target).translate(reply.raw_text)
     except Exception as e:
-        await event.edit(f"❌ خطا: `{e}`")
+        await event.edit(f"❌ `{e}`")
         return
     await event.edit(f"🌐 {translated}")
 
@@ -448,6 +441,119 @@ async def _cmd_autoreply(uid, event, arg):
     await event.edit(f"✅ تنظیم شد:\n`{arg[:500]}`")
 
 
+# ──── NEW: /ban and /unban from self-account ────
+async def _cmd_ban(uid, event, arg):
+    """Ban (silent block) a user. Usage: /ban @username or /ban 123456"""
+    uid_s = str(uid)
+    target = arg.strip().lstrip("@")
+    if not target:
+        await event.edit("❌ فرمت: `/ban @username` یا `/ban 123456`")
+        return
+    c = clients.get(uid)
+    if not c:
+        await event.edit("❌ سلف‌بات فعال نیست.")
+        return
+    try:
+        entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
+    except Exception as e:
+        await event.edit(f"❌ کاربر پیدا نشد: `{e}`")
+        return
+    tid = entity.id
+    name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
+    name = name.strip() or (getattr(entity, "username", "") or str(tid))
+    lst = db[uid_s].setdefault("silent_blocked", [])
+    if any(b["id"] == tid for b in lst):
+        await event.edit(f"⚠️ `{name}` از قبل مسدوده.")
+        return
+    try:
+        await c(BlockRequest(id=entity))
+    except Exception as e:
+        log.warning(f"[{uid}] native block failed: {e}")
+    lst.append({"id": tid, "name": name})
+    save_db(db)
+    await event.edit(f"🚫 `{name}` مسدود شد.\nپیام‌های جدیدش فوراً پاک میشن.")
+
+
+async def _cmd_unban(uid, event, arg):
+    """Unban (silent unblock) a user. Usage: /unban @username or /unban 123456"""
+    uid_s = str(uid)
+    target = arg.strip().lstrip("@")
+    if not target:
+        await event.edit("❌ فرمت: `/unban @username` یا `/unban 123456`")
+        return
+    c = clients.get(uid)
+    lst = db.get(uid_s, {}).get("silent_blocked", [])
+    # find by id or name
+    target_id = None
+    if target.lstrip("-").isdigit():
+        target_id = int(target)
+    else:
+        for b in lst:
+            if b["name"].lower() == target.lower() or target.lower() in b["name"].lower():
+                target_id = b["id"]
+                break
+    if target_id is None:
+        await event.edit("❌ توی لیست بلاک پیدا نشد.")
+        return
+    entry = next((b for b in lst if b["id"] == target_id), None)
+    if not entry:
+        await event.edit("❌ توی لیست بلاک پیدا نشد.")
+        return
+    if c:
+        try:
+            await c(UnblockRequest(id=target_id))
+        except Exception as e:
+            log.warning(f"[{uid}] native unblock failed: {e}")
+    lst[:] = [b for b in lst if b["id"] != target_id]
+    save_db(db)
+    await event.edit(f"✅ `{entry['name']}` آنبلاک شد.")
+
+
+async def _cmd_banlist(uid, event):
+    """Show ban list from self-account. Usage: /banlist"""
+    uid_s = str(uid)
+    lst = db.get(uid_s, {}).get("silent_blocked", [])
+    if not lst:
+        await event.edit("🚫 لیست بلاک خالیه.\n\n`/ban @username` — بلاک\n`/unban @username` — آنبلاک")
+        return
+    names = "\n".join(f"• `{b['name']}` (`{b['id']}`)" for b in lst)
+    await event.edit(f"━━━ 🚫 لیست بلاک ━━━\n\n{names}\n\n`/unban @username` — آنبلاک")
+
+
+async def _cmd_help_self(uid, event):
+    """Show help from self-account. Usage: /help"""
+    await event.edit(
+        "━━━ 📖 راهنما ━━━\n\n"
+        "━━ گروه/کانال ━━\n"
+        "`/tag [متن]` — تگ همه اعضا\n"
+        "`/pin` (ریپلای) — پین پیام\n"
+        "`/ping` — تست اتصال\n\n"
+        "━━ فونت ━━\n"
+        "`/font` — لیست فونت‌ها\n"
+        "`/font bold متن` — تبدیل فونت\n"
+        "`/font set bold` — فونت خودکار\n"
+        "`/font off` — خاموش فونت خودکار\n\n"
+        "━━ ترجمه ━━\n"
+        "`/tr` (ریپلای) — ترجمه به فارسی\n"
+        "`/tr en` (ریپلای) — ترجمه به انگلیسی\n\n"
+        "━━ بلاک ━━\n"
+        "`/ban @username` — بلاک مخفی\n"
+        "`/unban @username` — آنبلاک\n"
+        "`/banlist` — لیست بلاک‌ها\n\n"
+        "━━ پیام ━━\n"
+        "`/r 100 متن` — ارسال تکراری\n"
+        "`/del 100` — حذف پیام‌ها\n\n"
+        "━━ پاسخ خودکار ━━\n"
+        "`/rr` — وضعیت\n"
+        "`/rr on` / `/rr off`\n"
+        "`/rr متن پیام` — تنظیم و روشن\n\n"
+        "━━ استایل‌های فونت ━━\n"
+        "`bold` `italic` `bold_italic`\n"
+        "`script` `doublestruck` `fraktur`\n"
+        "`monospace` `circled` `fullwidth`"
+    )
+
+
 # ═══════════════════════════════════════════════════
 # COMMAND HANDLER REGISTRATION
 # ═══════════════════════════════════════════════════
@@ -458,11 +564,9 @@ def register_command_handlers(uid, c):
     async def _dispatch(event):
         text = event.raw_text or ""
 
-        # ──── FIX: skip messages to the control bot by ID ────
         if CONTROL_BOT_ID and event.chat_id == CONTROL_BOT_ID:
             return
 
-        # skip if user is in setup/settings conversation
         if uid in conv or uid in setting_mode:
             return
 
@@ -487,10 +591,18 @@ def register_command_handlers(uid, c):
                     await _cmd_repeat(event, arg)
                 elif cmd == "/rr":
                     await _cmd_autoreply(uid, event, arg)
+                elif cmd == "/ban":
+                    await _cmd_ban(uid, event, arg)
+                elif cmd == "/unban":
+                    await _cmd_unban(uid, event, arg)
+                elif cmd == "/banlist":
+                    await _cmd_banlist(uid, event)
+                elif cmd == "/help":
+                    await _cmd_help_self(uid, event)
             except Exception as e:
                 log.warning(f"[{uid}] cmd {cmd} error: {e}")
                 try:
-                    await event.edit(f"❌ خطا: `{e}`")
+                    await event.edit(f"❌ `{e}`")
                 except Exception:
                     pass
             return
@@ -634,7 +746,7 @@ async def selfbot_worker(uid, bot_ref):
         db[uid_s]["active"] = False
         save_db(db)
         try:
-            await bot_ref.send_message(uid, f"❌ خطا: `{e}`")
+            await bot_ref.send_message(uid, f"❌ `{e}`")
         except Exception:
             pass
     finally:
@@ -707,7 +819,6 @@ async def run_bot():
             log.info(f"Restart selfbot {uid}")
             tasks[uid] = asyncio.create_task(selfbot_worker(uid, bot))
 
-    # ── helpers ──────────────────────────────────
     def main_kb(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
@@ -752,7 +863,7 @@ async def run_bot():
     def block_text(uid):
         lst = db.get(str(uid), {}).get("silent_blocked", [])
         if not lst:
-            return "━━━ 🚫 بلاک م━━━━\n\nکسی مسدود نیست."
+            return "━━━ 🚫 بلاک مخفی ━━━\n\nکسی مسدود نیست."
         names = "\n".join(f"• {b['name']}" for b in lst)
         return f"━━━ 🚫 بلاک مخفی ━━━\n\n{names}"
 
@@ -788,6 +899,47 @@ async def run_bot():
                 "━━━ 🤖 سلف‌بات ساز ━━━\n\nساعت توی اسم پروفایلت!\n\n✨ آپدیت خودکار\n🌍 تایم‌زون\n🚫 بلاک مخفی\n📨 پاسخ خودکار",
                 buttons=main_kb(uid),
             )
+
+    # ── /help (control bot) ─────────────────────
+    @bot.on(events.NewMessage(pattern=r"/help"))
+    async def cmd_help(event):
+        await event.respond(
+            "━━━ 📖 راهنمای کامل ━━━\n\n"
+            "━━ ربات کنترل (این چت) ━━\n"
+            "`/start` — منوی اصلی\n"
+            "`/status` — وضعیت سلف‌بات\n"
+            "`/stop` — توقف سلف‌بات\n"
+            "`/block` — مدیریت بلاک مخفی\n"
+            "`/help` — همین راهنما\n\n"
+            "━━ اکانت خودت (توی هر چت) ━━\n\n"
+            "📌 گروه:\n"
+            "  `/tag [متن]` — تگ همه اعضا\n"
+            "  `/pin` (ریپلای) — پین پیام\n"
+            "  `/ping` — تست اتصال\n\n"
+            "🎨 فونت:\n"
+            "  `/font` — لیست فونت‌ها\n"
+            "  `/font bold متن` — تبدیل فونت\n"
+            "  `/font set bold` — فونت خودکار\n"
+            "  `/font off` — خاموش\n\n"
+            "🌐 ترجمه:\n"
+            "  `/tr` (ریپلای) — ترجمه به فارسی\n"
+            "  `/tr en` (ریپلای) — ترجمه به انگلیسی\n\n"
+            "🚫 بلاک:\n"
+            "  `/ban @username` — بلاک مخفی\n"
+            "  `/unban @username` — آنبلاک\n"
+            "  `/banlist` — لیست بلاک‌ها\n\n"
+            "📨 پاسخ خودکار:\n"
+            "  `/rr` — وضعیت\n"
+            "  `/rr on` / `/rr off`\n"
+            "  `/rr متن پیام` — تنظیم و روشن\n\n"
+            "💬 پیام:\n"
+            "  `/r 100 متن` — ارسال تکراری\n"
+            "  `/del 100` — حذف پیام‌ها\n\n"
+            "━━ استایل‌های فونت ━━\n"
+            "`bold` `italic` `bold_italic` `script`\n"
+            "`doublestruck` `fraktur` `monospace`\n"
+            "`circled` `fullwidth`",
+        )
 
     # ── setup ───────────────────────────────────
     @bot.on(events.CallbackQuery(data=b"setup"))
@@ -977,7 +1129,6 @@ async def run_bot():
         if text.startswith("/"):
             return
 
-        # setup
         if uid in conv:
             step = conv[uid]["step"]
             if step == "phone":
@@ -1051,7 +1202,6 @@ async def run_bot():
                 await start_sb(uid, bot)
                 return
 
-        # settings
         if uid in setting_mode:
             uid_s = str(uid)
             if uid_s not in db:
@@ -1152,16 +1302,6 @@ async def run_bot():
     @bot.on(events.NewMessage(pattern=r"/block"))
     async def cmd_block(event):
         await event.respond(block_text(event.sender_id), buttons=block_kb(event.sender_id))
-
-    @bot.on(events.NewMessage(pattern=r"/help"))
-    async def cmd_help(event):
-        await event.respond(
-            "━━━ 📖 راهنما ━━━\n\n"
-            "ربات کنترل:\n/start /status /stop /block /help\n\n"
-            "اکانت خودت:\n"
-            "`/tag` `/pin` `/ping` `/font` `/tr`\n"
-            "`/r 100 متن` `/rr` `/del 100`",
-        )
 
     if ADMIN_ID:
         @bot.on(events.NewMessage(from_users=ADMIN_ID, pattern=r"/stats"))
