@@ -287,9 +287,9 @@ _CIRCLED_DIGITS = {"1": "\u2460", "2": "\u2461", "3": "\u2462", "4": "\u2463", "
 FONT_MAPS["circled"].update(_CIRCLED_DIGITS)
 
 FONT_LABELS = {
-    "bold": "Bold", "italic": "Italic", "bold_italic": "Bold Italic",
-    "script": "Script", "doublestruck": "Double", "fraktur": "Fraktur",
-    "monospace": "Mono", "circled": "Circled", "fullwidth": "Fullwidth",
+    "bold": "𝗕𝗼𝗹𝗱", "italic": "𝘐𝘵𝘢𝘭𝘪𝘤", "bold_italic": "𝑩𝒐𝒍𝒅 𝑰𝒕𝒂𝒍𝒊𝒄",
+    "script": "𝒮𝒸𝓇𝒾𝓅𝓉", "doublestruck": "𝔻𝕠𝕦𝕓𝕝𝕖", "fraktur": "𝔉𝔯𝔞𝔨𝔱𝔲𝔯",
+    "monospace": "𝙼𝚘𝚗𝚘", "circled": "Ⓒⓘⓡⓒⓛⓔⓓ", "fullwidth": "Ｆｕｌｌｗｉｄｔｈ",
 }
 
 
@@ -320,10 +320,10 @@ NAME_FONT_MAPS = {
 }
 
 NAME_FONT_LABELS = {
-    "normal": "Normal", "bold": "Bold", "doublestruck": "Double",
-    "monospace": "Mono", "sans": "Sans", "filled": "Sans Bold",
-    "circled": "Circled", "fullwidth": "Fullwidth",
-    "cursive": "Super", "inverted": "Sub",
+    "normal": "معمولی", "bold": "𝗕𝗼𝗹𝗱", "doublestruck": "𝔻𝕠𝕦𝕓𝕝𝕖",
+    "monospace": "𝙼𝚘𝚗𝚘", "sans": "𝖲𝖺𝗇𝗌", "filled": "𝙎𝙖𝙣𝙨 𝘽𝙤𝙡𝙙",
+    "circled": "Ⓒⓘⓡⓒⓛⓔⓓ", "fullwidth": "Ｆｕｌｌｗｉｄｔｈ",
+    "cursive": "بالانویس", "inverted": "زیرنویس",
 }
 
 NAME_FONT_ORDER = list(NAME_FONT_LABELS.keys())
@@ -382,7 +382,6 @@ def register_incoming_handler(uid, c):
         try:
             sender_id = event.sender_id
 
-            # mute - ALL chats
             if sender_id in muted_ids(uid_s):
                 try:
                     await event.delete()
@@ -405,7 +404,6 @@ def register_incoming_handler(uid, c):
 
             u = db.get(uid_s, {})
 
-            # block
             if sender_id in blocked_ids(uid_s):
                 try:
                     await event.delete()
@@ -413,7 +411,6 @@ def register_incoming_handler(uid, c):
                     pass
                 return
 
-            # pv lock
             if u.get("pv_lock"):
                 try:
                     await event.delete()
@@ -421,7 +418,6 @@ def register_incoming_handler(uid, c):
                     pass
                 return
 
-            # secretary - once per user
             if u.get("secretary_enabled") and u.get("secretary_text"):
                 sent_to = u.get("secretary_sent_to", {})
                 if str(sender_id) not in sent_to:
@@ -440,7 +436,6 @@ def register_incoming_handler(uid, c):
                     save_user(uid_s)
                     return
 
-            # auto-reply with cooldown
             if u.get("auto_reply_enabled") and u.get("auto_reply_text"):
                 now = time.time()
                 sent_to = u.get("auto_reply_sent_to", {})
@@ -486,17 +481,17 @@ async def _cmd_tag(event, arg):
     chat = await event.get_chat()
     if not (getattr(chat, "megagroup", False) or getattr(chat, "gigagroup", False)
             or hasattr(chat, "participants_count") or getattr(chat, "broadcast", False)):
-        await event.edit("X csak csoportban.")
+        await event.edit("❌ این دستور فقط توی گروه/کانال کار می‌کنه.")
         return
     try:
         participants = await event.client.get_participants(event.chat_id, aggressive=True)
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ خطا: `{e}`")
         return
     mentions = [f"[{p.first_name or p.username or p.id}](tg://user?id={p.id})"
                 for p in participants if not p.bot and not p.deleted]
     if not mentions:
-        await event.edit("Nincs tag.")
+        await event.edit("❌ عضوی پیدا نشد.")
         return
     await event.delete()
     for i in range(0, len(mentions), 5):
@@ -514,52 +509,58 @@ async def _cmd_tag(event, arg):
 async def _cmd_pin(event):
     reply = await event.get_reply_message()
     if not reply:
-        await event.edit("Reply + /pin")
+        await event.edit("❌ باید روی یه پیام ریپلای کنی.\nمثال: ریپلای + `/pin`")
         return
     try:
         await event.client.pin_message(event.chat_id, reply, notify=False)
-        await event.edit("Pinned.")
+        await event.edit("📌 پیام پین شد.")
         await asyncio.sleep(2)
         await event.delete()
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ خطا: `{e}`")
 
 
 async def _cmd_ping(event):
     t0 = time.time()
-    await event.edit("Pong...")
+    await event.edit("🏓 در حال بررسی...")
     ms = round((time.time() - t0) * 1000, 2)
-    await event.edit(f"Pong! {ms}ms")
+    await event.edit(f"🏓 **Pong!**\n⚡ تاخیر: `{ms}ms`\n✅ سلف‌بات آنلاینه")
 
 
 async def _cmd_font(uid, event, arg):
     uid_s = str(uid)
     args = arg.split(maxsplit=1)
     if not args:
-        styles = "\n".join(f"- {k} - {v}" for k, v in FONT_LABELS.items())
-        await event.edit(f"Font:\n\n/font <style> text\n/font set <style>\n/font off\n\n{styles}")
+        styles = "\n".join(f"• `{k}` — {v}" for k, v in FONT_LABELS.items())
+        await event.edit(
+            "🎨 **راهنمای فونت:**\n\n"
+            "`/font <style> متن` — تبدیل یه متن\n"
+            "`/font set <style>` — فعال کردن فونت خودکار\n"
+            "`/font off` — خاموش کردن\n\n"
+            f"استایل‌ها:\n{styles}"
+        )
         return
     sub = args[0].lower()
     if sub == "off":
         db[uid_s]["font_auto"] = False
         save_user(uid_s)
-        await event.edit("Auto font OFF.")
+        await event.edit("✅ فونت خودکار خاموش شد.")
         return
     if sub == "set":
         style = args[1].strip() if len(args) > 1 else ""
         if style not in FONT_MAPS:
-            await event.edit("Invalid style.")
+            await event.edit("❌ استایل نامعتبر.")
             return
         db[uid_s]["font_style"] = style
         db[uid_s]["font_auto"] = True
         save_user(uid_s)
-        await event.edit(f"Auto font: {style}")
+        await event.edit(f"✅ فونت خودکار: `{style}`")
         return
     if sub not in FONT_MAPS:
-        await event.edit("Invalid style.")
+        await event.edit("❌ استایل نامعتبر.")
         return
     if len(args) < 2:
-        await event.edit("No text.")
+        await event.edit("❌ متن نفرستادی.")
         return
     await event.edit(apply_font(args[1], sub))
 
@@ -568,21 +569,21 @@ async def _cmd_translate(event, arg):
     reply = await event.get_reply_message()
     target = arg.strip() or "fa"
     if not reply or not reply.raw_text:
-        await event.edit("Reply + /tr")
+        await event.edit("❌ باید روی یه پیام متنی ریپلای کنی.\nمثال: ریپلای + `/tr`")
         return
-    await event.edit("Translating...")
+    await event.edit("🌐 در حال ترجمه...")
     try:
         from deep_translator import GoogleTranslator
         translated = GoogleTranslator(source="auto", target=target).translate(reply.raw_text)
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ خطا در ترجمه: `{e}`\n\nنصب کن: `pip install deep-translator`")
         return
-    await event.edit(translated)
+    await event.edit(f"🌐 **ترجمه:**\n\n{translated}")
 
 
 async def _cmd_del(event, arg):
     if not arg.strip().isdigit():
-        await event.edit("Send a number.")
+        await event.edit("❌ عدد بفرست.\nمثال: `/del 100`")
         return
     n = min(int(arg.strip()), 300)
     ids = []
@@ -597,15 +598,15 @@ async def _cmd_del(event, arg):
 async def _cmd_repeat(event, arg):
     args = arg.split(maxsplit=1)
     if len(args) < 2:
-        await event.edit("/r 100 text")
+        await event.edit("❌ فرمت: `/r 100 سلام`")
         return
     count_str, text = args[0], args[1]
     if not count_str.isdigit():
-        await event.edit("Count must be a number.")
+        await event.edit("❌ تعداد باید عدد باشه.")
         return
     count = int(count_str)
     if count < 1 or count > 500:
-        await event.edit("1 to 500.")
+        await event.edit("❌ ۱ تا ۵۰۰ بار.")
         return
     await event.delete()
     for i in range(count):
@@ -630,49 +631,57 @@ async def _cmd_autoreply(uid, event, arg):
         on = u.get("auto_reply_enabled", False)
         txt = u.get("auto_reply_text", "")
         cd = u.get("auto_reply_cooldown", 3600)
-        s = "ON" if on else "OFF"
-        await event.edit(f"Auto-reply: {s}\nText: {txt or 'none'}\nCooldown: {cd}s\n\n/rr on / /rr off / /rr text")
+        s = "✅ روشن" if on else "❌ خاموش"
+        await event.edit(
+            f"📨 **پاسخ خودکار**\n\n"
+            f"وضعیت: {s}\n"
+            f"متن: `{txt or 'تنظیم نشده'}`\n"
+            f"کول‌داون: `{cd}` ثانیه\n\n"
+            f"`/rr on` — روشن\n"
+            f"`/rr off` — خاموش\n"
+            f"`/rr متن پیام` — تنظیم متن"
+        )
         return
     if arg == "on":
         if not db[uid_s].get("auto_reply_text"):
-            await event.edit("Set text first.")
+            await event.edit("❌ اول متن پاسخ رو تنظیم کن.\nمثال: `/rr الان در دسترس نیستم`")
             return
         db[uid_s]["auto_reply_enabled"] = True
         save_user(uid_s)
-        await event.edit("ON.")
+        await event.edit("✅ پاسخ خودکار روشن شد.")
         return
     if arg == "off":
         db[uid_s]["auto_reply_enabled"] = False
         save_user(uid_s)
-        await event.edit("OFF.")
+        await event.edit("❌ پاسخ خودکار خاموش شد.")
         return
     db[uid_s]["auto_reply_text"] = arg[:500]
     db[uid_s]["auto_reply_enabled"] = True
     save_user(uid_s)
-    await event.edit(f"Set: {arg[:500]}")
+    await event.edit(f"✅ پاسخ خودکار تنظیم شد:\n\n`{arg[:500]}`")
 
 
 async def _cmd_ban(uid, event, arg):
     uid_s = str(uid)
     target = arg.strip().lstrip("@")
     if not target:
-        await event.edit("/ban @username")
+        await event.edit("❌ فرمت: `/ban @username` یا `/ban 123456`")
         return
     c = clients.get(uid)
     if not c:
-        await event.edit("Selfbot not active.")
+        await event.edit("❌ سلف‌بات فعال نیست.")
         return
     try:
         entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ کاربر پیدا نشد: `{e}`")
         return
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
     name = name.strip() or (getattr(entity, "username", "") or str(tid))
     lst = db[uid_s].setdefault("silent_blocked", [])
     if any(b["id"] == tid for b in lst):
-        await event.edit(f"{name} already blocked.")
+        await event.edit(f"⚠️ `{name}` از قبل مسدوده.")
         return
     try:
         await c(BlockRequest(id=entity))
@@ -680,14 +689,14 @@ async def _cmd_ban(uid, event, arg):
         pass
     lst.append({"id": tid, "name": name})
     save_user(uid_s)
-    await event.edit(f"{name} blocked.")
+    await event.edit(f"🚫 `{name}` مسدود شد.\nپیام‌های جدیدش فوراً پاک میشن.")
 
 
 async def _cmd_unban(uid, event, arg):
     uid_s = str(uid)
     target = arg.strip().lstrip("@")
     if not target:
-        await event.edit("/unban @username")
+        await event.edit("❌ فرمت: `/unban @username`")
         return
     lst = db.get(uid_s, {}).get("silent_blocked", [])
     tid = int(target) if target.lstrip("-").isdigit() else None
@@ -697,11 +706,11 @@ async def _cmd_unban(uid, event, arg):
                 tid = b["id"]
                 break
     if tid is None:
-        await event.edit("Not found.")
+        await event.edit("❌ توی لیست بلاک پیدا نشد.")
         return
     entry = next((b for b in lst if b["id"] == tid), None)
     if not entry:
-        await event.edit("Not found.")
+        await event.edit("❌ پیدا نشد.")
         return
     c = clients.get(uid)
     if c:
@@ -711,50 +720,50 @@ async def _cmd_unban(uid, event, arg):
             pass
     lst[:] = [b for b in lst if b["id"] != tid]
     save_user(uid_s)
-    await event.edit(f"{entry['name']} unblocked.")
+    await event.edit(f"✅ `{entry['name']}` آنبلاک شد.")
 
 
 async def _cmd_banlist(uid, event):
     lst = db.get(str(uid), {}).get("silent_blocked", [])
     if not lst:
-        await event.edit("Ban list empty.")
+        await event.edit("🚫 لیست بلاک خالیه.\n\n`/ban @username` — بلاک\n`/unban @username` — آنبلاک")
         return
-    names = "\n".join(f"- {b['name']}" for b in lst)
-    await event.edit(f"Blocked:\n{names}")
+    names = "\n".join(f"• `{b['name']}`" for b in lst)
+    await event.edit(f"━━━ 🚫 لیست بلاک ━━━\n\n{names}\n\n`/unban @username` — آنبلاک")
 
 
 async def _cmd_mute(uid, event, arg):
     uid_s = str(uid)
     target = arg.strip().lstrip("@")
     if not target:
-        await event.edit("/mute @username")
+        await event.edit("❌ فرمت: `/mute @username`")
         return
     c = clients.get(uid)
     if not c:
-        await event.edit("Selfbot not active.")
+        await event.edit("❌ سلف‌بات فعال نیست.")
         return
     try:
         entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ کاربر پیدا نشد: `{e}`")
         return
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
     name = name.strip() or (getattr(entity, "username", "") or str(tid))
     lst = db[uid_s].setdefault("muted_users", [])
     if any(b["id"] == tid for b in lst):
-        await event.edit(f"{name} already muted.")
+        await event.edit(f"⚠️ `{name}` از قبل ساکته.")
         return
     lst.append({"id": tid, "name": name})
     save_user(uid_s)
-    await event.edit(f"{name} muted.")
+    await event.edit(f"🔇 `{name}` ساکت شد.\nپیام‌هاش توی تمام چت‌ها حذف میشن.")
 
 
 async def _cmd_unmute(uid, event, arg):
     uid_s = str(uid)
     target = arg.strip().lstrip("@")
     if not target:
-        await event.edit("/unmute @username")
+        await event.edit("❌ فرمت: `/unmute @username`")
         return
     lst = db.get(uid_s, {}).get("muted_users", [])
     tid = int(target) if target.lstrip("-").isdigit() else None
@@ -764,24 +773,24 @@ async def _cmd_unmute(uid, event, arg):
                 tid = b["id"]
                 break
     if tid is None:
-        await event.edit("Not found.")
+        await event.edit("❌ توی لیست سکوت پیدا نشد.")
         return
     entry = next((b for b in lst if b["id"] == tid), None)
     if not entry:
-        await event.edit("Not found.")
+        await event.edit("❌ پیدا نشد.")
         return
     lst[:] = [b for b in lst if b["id"] != tid]
     save_user(uid_s)
-    await event.edit(f"{entry['name']} unmuted.")
+    await event.edit(f"🔊 `{entry['name']}` از سکوت خارج شد.")
 
 
 async def _cmd_mutelist(uid, event):
     lst = db.get(str(uid), {}).get("muted_users", [])
     if not lst:
-        await event.edit("Mute list empty.")
+        await event.edit("🔇 لیست سکوت خالیه.\n\n`/mute @username` — سکوت\n`/unmute @username` — خارج کردن")
         return
-    names = "\n".join(f"- {b['name']}" for b in lst)
-    await event.edit(f"Muted:\n{names}")
+    names = "\n".join(f"• `{b['name']}`" for b in lst)
+    await event.edit(f"━━━ 🔇 لیست سکوت ━━━\n\n{names}\n\n`/unmute @username` — خارج کردن")
 
 
 async def _cmd_pvlock(uid, event, arg):
@@ -789,18 +798,18 @@ async def _cmd_pvlock(uid, event, arg):
     arg = arg.strip().lower()
     if not arg:
         on = db.get(uid_s, {}).get("pv_lock", False)
-        await event.edit(f"PV Lock: {'ON' if on else 'OFF'}\n\n/pvlock on | /pvlock off")
+        await event.edit(f"🔒 قفل پی‌وی: {'✅ روشن' if on else '❌ خاموش'}\n\n`/pvlock on` — روشن\n`/pvlock off` — خاموش")
         return
     if arg == "on":
         db[uid_s]["pv_lock"] = True
         save_user(uid_s)
-        await event.edit("PV Lock ON.")
+        await event.edit("🔒 قفل پی‌وی روشن شد.\nتمام پیام‌های خصوصی حذف میشن.")
     elif arg == "off":
         db[uid_s]["pv_lock"] = False
         save_user(uid_s)
-        await event.edit("PV Lock OFF.")
+        await event.edit("🔓 قفل پی‌وی خاموش شد.")
     else:
-        await event.edit("/pvlock on or /pvlock off")
+        await event.edit("❌ `/pvlock on` یا `/pvlock off`")
 
 
 async def _cmd_secretary(uid, event, arg):
@@ -812,38 +821,45 @@ async def _cmd_secretary(uid, event, arg):
         txt = u.get("secretary_text", "")
         cnt = len(u.get("secretary_sent_to", {}))
         await event.edit(
-            f"Secretary: {'ON' if on else 'OFF'}\nText: {txt or 'none'}\nReplied: {cnt}\n\n/secretary on/off/text/reset"
+            f"🤖 **منشی**\n\n"
+            f"وضعیت: {'✅ روشن' if on else '❌ خاموش'}\n"
+            f"متن: `{txt or 'تنظیم نشده'}`\n"
+            f"پاسخ داده شده: `{cnt}` نفر\n\n"
+            f"`/secretary متن پیام` — تنظیم و روشن\n"
+            f"`/secretary on` — روشن\n"
+            f"`/secretary off` — خاموش\n"
+            f"`/secretary reset` — ریست تاریخچه"
         )
         return
     if arg == "on":
         if not db[uid_s].get("secretary_text"):
-            await event.edit("Set text first.")
+            await event.edit("❌ اول متن منشی رو تنظیم کن.\nمثال: `/secretary الان در دسترس نیستم`")
             return
         db[uid_s]["secretary_enabled"] = True
         save_user(uid_s)
-        await event.edit("Secretary ON.")
+        await event.edit("✅ منشی روشن شد.")
         return
     if arg == "off":
         db[uid_s]["secretary_enabled"] = False
         save_user(uid_s)
-        await event.edit("Secretary OFF.")
+        await event.edit("❌ منشی خاموش شد.")
         return
     if arg == "reset":
         db[uid_s]["secretary_sent_to"] = {}
         save_user(uid_s)
-        await event.edit("History cleared.")
+        await event.edit("🗑 تاریخچه منشی پاک شد.\nبه همه دوباره پاسخ داده میشه.")
         return
     db[uid_s]["secretary_text"] = arg[:500]
     db[uid_s]["secretary_enabled"] = True
     save_user(uid_s)
-    await event.edit(f"Secretary set: {arg[:500]}")
+    await event.edit(f"✅ منشی تنظیم شد:\n\n`{arg[:500]}`")
 
 
 async def _cmd_typing(uid, event):
     uid_s = str(uid)
     c = clients.get(uid)
     if not c:
-        await event.edit("Selfbot not active.")
+        await event.edit("❌ سلف‌بات فعال نیست.")
         return
     if db[uid_s].get("typing_mode"):
         db[uid_s]["typing_mode"] = False
@@ -851,7 +867,7 @@ async def _cmd_typing(uid, event):
         if uid in action_tasks:
             action_tasks[uid].cancel()
             action_tasks.pop(uid, None)
-        await event.edit("Typing OFF.")
+        await event.edit("⌨️ حالت تایپینگ خاموش شد.")
     else:
         db[uid_s]["typing_mode"] = True
         db[uid_s]["game_mode"] = False
@@ -860,14 +876,14 @@ async def _cmd_typing(uid, event):
             action_tasks[uid].cancel()
             action_tasks.pop(uid, None)
         action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "typing"))
-        await event.edit("Typing ON -> 30 chats")
+        await event.edit("⌨️ حالت تایپینگ روشن شد.\nبه ۳۰ چت اخیر وضعیت تایپینگ ارسال میشه.")
 
 
 async def _cmd_game(uid, event):
     uid_s = str(uid)
     c = clients.get(uid)
     if not c:
-        await event.edit("Selfbot not active.")
+        await event.edit("❌ سلف‌بات فعال نیست.")
         return
     if db[uid_s].get("game_mode"):
         db[uid_s]["game_mode"] = False
@@ -875,7 +891,7 @@ async def _cmd_game(uid, event):
         if uid in action_tasks:
             action_tasks[uid].cancel()
             action_tasks.pop(uid, None)
-        await event.edit("Game OFF.")
+        await event.edit("🎮 حالت بازی خاموش شد.")
     else:
         db[uid_s]["game_mode"] = True
         db[uid_s]["typing_mode"] = False
@@ -884,7 +900,7 @@ async def _cmd_game(uid, event):
             action_tasks[uid].cancel()
             action_tasks.pop(uid, None)
         action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "game"))
-        await event.edit("Game ON -> 30 chats")
+        await event.edit("🎮 حالت بازی روشن شد.\nبه ۳۰ چت اخیر وضعیت بازی ارسال میشه.")
 
 
 async def _cmd_dice(event):
@@ -892,7 +908,7 @@ async def _cmd_dice(event):
         await event.client.send_file(event.chat_id, InputMediaDice(emoticon="\U0001F3B2"))
         await event.delete()
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ خطا: `{e}`")
 
 
 async def _cmd_bowl(event):
@@ -900,7 +916,7 @@ async def _cmd_bowl(event):
         await event.client.send_file(event.chat_id, InputMediaDice(emoticon="\U0001F3B3"))
         await event.delete()
     except Exception as e:
-        await event.edit(f"Error: {e}")
+        await event.edit(f"❌ خطا: `{e}`")
 
 
 async def _cmd_clock(uid, event, arg):
@@ -908,12 +924,12 @@ async def _cmd_clock(uid, event, arg):
     arg = arg.strip().lower()
     if not arg:
         on = db.get(uid_s, {}).get("clock_enabled", True)
-        await event.edit(f"Clock: {'ON' if on else 'OFF'}\n\n/clock on | /clock off")
+        await event.edit(f"⏰ ساعت در اسم: {'✅ روشن' if on else '❌ خاموش'}\n\n`/clock on` — روشن\n`/clock off` — خاموش")
         return
     if arg == "on":
         db[uid_s]["clock_enabled"] = True
         save_user(uid_s)
-        await event.edit("Clock ON.")
+        await event.edit("✅ ساعت روشن شد.")
     elif arg == "off":
         db[uid_s]["clock_enabled"] = False
         save_user(uid_s)
@@ -924,9 +940,9 @@ async def _cmd_clock(uid, event, arg):
                 await c(UpdateProfileRequest(first_name=base, last_name=db[uid_s].get("orig_last", ""), about=db[uid_s].get("orig_about", "")))
             except Exception:
                 pass
-        await event.edit("Clock OFF.")
+        await event.edit("❌ ساعت خاموش شد.")
     else:
-        await event.edit("/clock on or /clock off")
+        await event.edit("❌ `/clock on` یا `/clock off`")
 
 
 async def _cmd_nfont(uid, event, arg):
@@ -934,39 +950,45 @@ async def _cmd_nfont(uid, event, arg):
     arg = arg.strip().lower()
     if not arg:
         current = db.get(uid_s, {}).get("name_font_style", "normal")
-        styles = "\n".join(f"- {k} - {v}" for k, v in NAME_FONT_LABELS.items())
-        await event.edit(f"Name font: {current}\n\n/nfont [style]\n\n{styles}")
+        styles = "\n".join(f"• `{k}` — {v}" for k, v in NAME_FONT_LABELS.items())
+        await event.edit(f"🎨 فونت ساعت: `{current}`\n\n`/nfont [style]`\n\n{styles}")
         return
     if arg not in NAME_FONT_MAPS:
-        await event.edit("Invalid style.")
+        await event.edit("❌ استایل نامعتبر.")
         return
     db[uid_s]["name_font_style"] = arg
     save_user(uid_s)
-    await event.edit(f"Name font: {arg}")
+    await event.edit(f"✅ فونت ساعت: `{arg}`")
 
 
 async def _cmd_panel(uid, event):
     uid_s = str(uid)
     u = db.get(uid_s, {})
-    clock = "ON" if u.get("clock_enabled", True) else "OFF"
-    ar = "ON" if u.get("auto_reply_enabled") else "OFF"
-    sec = "ON" if u.get("secretary_enabled") else "OFF"
-    pv = "ON" if u.get("pv_lock") else "OFF"
-    typ = "ON" if u.get("typing_mode") else "OFF"
-    gam = "ON" if u.get("game_mode") else "OFF"
+    clock = "✅ روشن" if u.get("clock_enabled", True) else "❌ خاموش"
+    ar = "✅ روشن" if u.get("auto_reply_enabled") else "❌ خاموش"
+    sec = "✅ روشن" if u.get("secretary_enabled") else "❌ خاموش"
+    pv = "✅ روشن" if u.get("pv_lock") else "❌ خاموش"
+    typ = "✅ روشن" if u.get("typing_mode") else "❌ خاموش"
+    gam = "✅ روشن" if u.get("game_mode") else "❌ خاموش"
     await event.edit(
-        f"=== PANEL ===\n\n"
-        f"Clock: {clock} | Font: {u.get('name_font_style', 'normal')}\n"
-        f"Auto-reply: {ar} | Secretary: {sec}\n"
-        f"PV Lock: {pv} | Typing: {typ} | Game: {gam}\n\n"
-        "Commands:\n"
-        "/clock on/off | /nfont [style]\n"
-        "/typing | /game | /pvlock on/off\n"
-        "/secretary on/off/text/reset\n"
-        "/rr on/off/text\n"
-        "/ban @u | /unban @u | /banlist\n"
-        "/mute @u | /unmute @u | /mutelist\n"
-        "/dice | /bowl"
+        f"━━━ 🎛 پنل مدیریت ━━━\n\n"
+        f"⏰ ساعت: {clock}\n🎨 فونت ساعت: `{u.get('name_font_style', 'normal')}`\n\n"
+        f"📨 پاسخ خودکار: {ar}\n🤖 منشی: {sec}\n\n"
+        f"🔒 قفل پی‌وی: {pv}\n\n"
+        f"⌨️ تایپینگ: {typ}\n🎮 بازی: {gam}\n\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "━━ دستورات ━━\n"
+        "`/clock on/off` — ساعت\n"
+        "`/nfont [style]` — فونت ساعت\n"
+        "`/typing` — تایپینگ\n"
+        "`/game` — بازی\n"
+        "`/pvlock on/off` — قفل پی‌وی\n"
+        "`/secretary متن` — منشی\n"
+        "`/rr متن` — پاسخ خودکار\n"
+        "`/ban @u` — بلاک\n"
+        "`/mute @u` — سکوت\n"
+        "`/dice` 🎲 — تاس\n"
+        "`/bowl` 🎳 — بولینگ"
     )
 
 
@@ -976,81 +998,85 @@ async def _cmd_panel(uid, event):
 async def _cmd_help_self(uid, event):
     uid_s = str(uid)
     u = db.get(uid_s, {})
-    clock_st = "ON" if u.get("clock_enabled", True) else "OFF"
-    ar_st = "ON" if u.get("auto_reply_enabled") else "OFF"
-    sec_st = "ON" if u.get("secretary_enabled") else "OFF"
-    pv_st = "ON" if u.get("pv_lock") else "OFF"
-    typ_st = "ON" if u.get("typing_mode") else "OFF"
-    gam_st = "ON" if u.get("game_mode") else "OFF"
+    clock_st = "✅ روشن" if u.get("clock_enabled", True) else "❌ خاموش"
+    ar_st = "✅ روشن" if u.get("auto_reply_enabled") else "❌ خاموش"
+    sec_st = "✅ روشن" if u.get("secretary_enabled") else "❌ خاموش"
+    pv_st = "✅ روشن" if u.get("pv_lock") else "❌ خاموش"
+    typ_st = "✅ روشن" if u.get("typing_mode") else "❌ خاموش"
+    gam_st = "✅ روشن" if u.get("game_mode") else "❌ خاموش"
     font_st = u.get("name_font_style", "normal")
     await event.edit(
-        "==============================\n"
-        "        FULL GUIDE\n"
-        "==============================\n\n"
-        "--- PANEL ---\n"
-        "/panel - control panel with status\n\n"
-        f"--- CLOCK IN NAME [{clock_st}] ---\n"
-        "/clock on - enable clock\n"
-        "/clock off - disable clock\n"
-        f"/nfont [style] - clock font (now: {font_st})\n"
-        "Styles: normal bold doublestruck monospace\n"
-        "sans filled circled fullwidth cursive inverted\n\n"
-        "--- TEXT FONT ---\n"
-        "/font - list all styles\n"
-        "/font bold text - convert text\n"
-        "/font set italic - auto font for messages\n"
-        "/font off - disable auto font\n"
-        "Styles: bold italic bold_italic script\n"
-        "doublestruck fraktur monospace circled fullwidth\n\n"
-        "--- SILENT BLOCK ---\n"
-        "/ban @username - silent block (delete messages)\n"
-        "/ban 123456 - block by user ID\n"
-        "/unban @username - unblock\n"
-        "/banlist - show block list\n\n"
-        "--- MUTE ---\n"
-        "/mute @username - mute (delete in all chats)\n"
-        "/unmute @username - unmute\n"
-        "/mutelist - show mute list\n\n"
-        f"--- PV LOCK [{pv_st}] ---\n"
-        "/pvlock on - lock (delete all private messages)\n"
-        "/pvlock off - unlock\n\n"
-        f"--- SECRETARY [{sec_st}] ---\n"
-        "/secretary text - set text and enable\n"
-        "/secretary on - enable\n"
-        "/secretary off - disable\n"
-        "/secretary reset - clear reply history\n"
-        "Each user gets auto-reply only once\n\n"
-        f"--- AUTO REPLY [{ar_st}] ---\n"
-        "/rr text - set text and enable\n"
-        "/rr on - enable\n"
-        "/rr off - disable\n"
-        "/rr - show status\n"
-        "Each person gets reply once per cooldown\n\n"
-        f"--- TYPING / GAME [{typ_st}/{gam_st}] ---\n"
-        "/typing - toggle typing status (30 chats)\n"
-        "/game - toggle game status (30 chats)\n"
-        "These two disable each other\n\n"
-        "--- GROUP / CHANNEL ---\n"
-        "/tag [text] - mention all members\n"
-        "/pin (reply) - pin message\n"
-        "/ping - test connection\n\n"
-        "--- TRANSLATE ---\n"
-        "/tr (reply) - translate to Persian\n"
-        "/tr en (reply) - translate to English\n"
-        "/tr ar (reply) - translate to Arabic\n\n"
-        "--- MESSAGES ---\n"
-        "/r 100 text - send 100 times (max 500)\n"
-        "/del 100 - delete last 100 messages (max 300)\n\n"
-        "--- FUN ---\n"
-        "/dice - send dice\n"
-        "/bowl - send bowling\n\n"
-        "--- CONTROL BOT (private chat with bot) ---\n"
-        "/start - main menu\n"
-        "/status - full status\n"
-        "/stop - stop selfbot\n"
-        "/block - manage silent block\n"
-        "/help - this guide\n\n"
-        "=============================="
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+        "       📖 راهنمای کامل\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "━━ 🎛 پنل مدیریت ━━\n"
+        "`/panel` — نمایش وضعیت و کنترل تمام قابلیت‌ها\n\n"
+        f"━━ ⏰ ساعت در اسم [{clock_st}] ━━\n"
+        "`/clock on` — روشن کردن ساعت\n"
+        "`/clock off` — خاموش کردن ساعت\n"
+        f"`/nfont [style]` — فونت ساعت (الان: `{font_st}`)\n"
+        "استایل‌های ساعت:\n"
+        "`normal` `bold` `doublestruck` `monospace`\n"
+        "`sans` `filled` `circled` `fullwidth`\n"
+        "`cursive`(بالانویس) `inverted`(زیرنویس)\n\n"
+        "━━ 🎨 فونت متن ━━\n"
+        "`/font` — لیست فونت‌ها و راهنما\n"
+        "`/font bold متن` — تبدیل متن به فونت\n"
+        "`/font set bold` — فونت خودکار برای پیام‌ها\n"
+        "`/font off` — خاموش فونت خودکار\n"
+        "استایل‌ها:\n"
+        "`bold` `italic` `bold_italic` `script`\n"
+        "`doublestruck` `fraktur` `monospace`\n"
+        "`circled` `fullwidth`\n\n"
+        "━━ 🚫 بلاک مخفی ━━\n"
+        "`/ban @username` — بلاک مخفی (پیام‌ها فوراً پاک)\n"
+        "`/ban 123456` — بلاک با آیدی عددی\n"
+        "`/unban @username` — آنبلاک\n"
+        "`/banlist` — نمایش لیست بلاک‌ها\n\n"
+        "━━ 🔇 سکوت کاربر ━━\n"
+        "`/mute @username` — سکوت (حذف پیام در تمام چت‌ها)\n"
+        "`/unmute @username` — خارج از سکوت\n"
+        "`/mutelist` — نمایش لیست سکوت‌ها\n\n"
+        f"━━ 🔒 قفل پی‌وی [{pv_st}] ━━\n"
+        "`/pvlock on` — روشن (حذف تمام پیام‌های خصوصی)\n"
+        "`/pvlock off` — خاموش\n\n"
+        f"━━ 🤖 منشی [{sec_st}] ━━\n"
+        "`/secretary متن پیام` — تنظیم متن و روشن\n"
+        "`/secretary on` — روشن\n"
+        "`/secretary off` — خاموش\n"
+        "`/secretary reset` — پاک کردن تاریخچه\n"
+        "هر کاربر فقط یک‌بار پاسخ خودکار دریافت می‌کنه\n\n"
+        f"━━ 📨 پاسخ خودکار [{ar_st}] ━━\n"
+        "`/rr متن پیام` — تنظیم متن و روشن\n"
+        "`/rr on` — روشن\n"
+        "`/rr off` — خاموش\n"
+        "`/rr` — نمایش وضعیت\n"
+        "هر نفر فقط هر X ثانیه یه بار پاسخ می‌گیره\n\n"
+        f"━━ ⌨️ تایپینگ/بازی [{typ_st}/{gam_st}] ━━\n"
+        "`/typing` — روشن/خاموش تایپینگ (۳۰ چت اخیر)\n"
+        "`/game` — روشن/خاموش بازی (۳۰ چت اخیر)\n"
+        "این دو حالت یکدیگر رو غیرفعال می‌کنن\n\n"
+        "━━ 🏷 گروه/کانال ━━\n"
+        "`/tag [متن]` — تگ کردن همه اعضا\n"
+        "`/pin` (ریپلای) — پین کردن پیام\n"
+        "`/ping` — تست اتصال سلف‌بات\n\n"
+        "━━ 🌐 ترجمه ━━\n"
+        "`/tr` (ریپلای) — ترجمه به فارسی\n"
+        "`/tr en` (ریپلای) — ترجمه به انگلیسی\n"
+        "`/tr ar` (ریپلای) — ترجمه به عربی\n\n"
+        "━━ 📨 پیام ━━\n"
+        "`/r 100 متن` — ارسال ۱۰۰ بار (حداکثر ۵۰۰)\n"
+        "`/del 100` — حذف ۱۰۰ پیام آخر (حداکثر ۳۰۰)\n\n"
+        "━━ 🎲 سرگرمی ━━\n"
+        "`/dice` — ارسال تاس 🎲\n"
+        "`/bowl` — ارسال بولینگ 🎳\n\n"
+        "━━ 📖 ربات کنترل (چت خصوصی با بات) ━━\n"
+        "`/start` — منوی اصلی و ساخت سلف‌بات\n"
+        "`/status` — وضعیت کامل سلف‌بات\n"
+        "`/stop` — توقف سلف‌بات\n"
+        "`/block` — مدیریت بلاک مخفی\n"
+        "`/help` — همین راهنما\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━"
     )
 
 
@@ -1099,11 +1125,10 @@ def register_command_handlers(uid, c):
             except Exception as e:
                 log.warning(f"[{uid}] cmd {cmd}: {e}")
                 try:
-                    await event.edit(f"Error: {e}")
+                    await event.edit(f"❌ خطا: `{e}`")
                 except Exception:
                     pass
             return
-        # auto-font
         uid_s = str(uid)
         u = db.get(uid_s, {})
         if u.get("font_auto") and u.get("font_style") and text.strip():
@@ -1132,24 +1157,24 @@ async def silent_block_user(uid, target):
     uid_s = str(uid)
     c = clients.get(uid)
     if not c:
-        return False, "Selfbot not active."
+        return False, "❌ سلف‌بات فعال نیست."
     try:
         entity = await c.get_entity(int(target) if str(target).lstrip("-").isdigit() else target)
     except Exception as e:
-        return False, f"Error: {e}"
+        return False, f"❌ کاربر پیدا نشد: `{e}`"
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
     name = name.strip() or (getattr(entity, "username", "") or str(tid))
     lst = db[uid_s].setdefault("silent_blocked", [])
     if any(b["id"] == tid for b in lst):
-        return False, f"{name} already blocked."
+        return False, f"⚠️ `{name}` از قبل مسدوده."
     try:
         await c(BlockRequest(id=entity))
     except Exception:
         pass
     lst.append({"id": tid, "name": name})
     save_user(uid_s)
-    return True, f"{name} blocked."
+    return True, f"🚫 `{name}` مسدود شد.\nپیام‌های جدیدش فوراً پاک میشن."
 
 
 async def silent_unblock_user(uid, target_id):
@@ -1158,7 +1183,7 @@ async def silent_unblock_user(uid, target_id):
     lst = db.get(uid_s, {}).get("silent_blocked", [])
     entry = next((b for b in lst if b["id"] == target_id), None)
     if not entry:
-        return False, "Not found."
+        return False, "❌ پیدا نشد."
     if c:
         try:
             await c(UnblockRequest(id=target_id))
@@ -1166,7 +1191,7 @@ async def silent_unblock_user(uid, target_id):
             pass
     lst[:] = [b for b in lst if b["id"] != target_id]
     save_user(uid_s)
-    return True, f"{entry['name']} unblocked."
+    return True, f"✅ `{entry['name']}` آنبلاک شد."
 
 
 # ═══════════════════════════════════════════════════
@@ -1197,7 +1222,7 @@ async def selfbot_worker(uid, bot_ref):
             action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "game"))
 
         try:
-            await bot_ref.send_message(uid, "Selfbot active!")
+            await bot_ref.send_message(uid, "✅ سلف‌بات فعال شد!")
         except Exception:
             pass
 
@@ -1231,7 +1256,7 @@ async def selfbot_worker(uid, bot_ref):
                 db[uid_s]["active"] = False
                 save_user(uid_s)
                 try:
-                    await bot_ref.send_message(uid, "Session expired. /start")
+                    await bot_ref.send_message(uid, "❌ سشن منقضی شده.\n/start رو بزن.")
                 except Exception:
                     pass
                 break
@@ -1253,7 +1278,7 @@ async def selfbot_worker(uid, bot_ref):
         db[uid_s]["active"] = False
         save_user(uid_s)
         try:
-            await bot_ref.send_message(uid, f"Error: {e}")
+            await bot_ref.send_message(uid, f"❌ خطا:\n`{e}`")
         except Exception:
             pass
     finally:
@@ -1339,53 +1364,53 @@ async def run_bot():
         uid_s = str(uid)
         u = db.get(uid_s, {})
         if not u.get("session_string"):
-            return [[Button.inline("Create Selfbot", b"setup")]]
+            return [[Button.inline("🚀 ساخت سلف‌بات", b"setup")]]
         on = uid in tasks and not tasks[uid].done()
         if on:
             return [
-                [Button.inline("Stop", b"stop"), Button.inline("Restart", b"restart")],
-                [Button.inline("Panel", b"panel")],
-                [Button.inline("Settings", b"settings")],
-                [Button.inline("Block", b"block_menu")],
-                [Button.inline("Auto-Reply", b"ar_menu")],
-                [Button.inline("Secretary", b"sec_menu")],
-                [Button.inline("Delete", b"ask_delete")],
+                [Button.inline("⏹ توقف", b"stop"), Button.inline("🔄 ری‌استارت", b"restart")],
+                [Button.inline("🎛 پنل مدیریت", b"panel")],
+                [Button.inline("⚙️ تنظیمات", b"settings")],
+                [Button.inline("🚫 بلاک مخفی", b"block_menu")],
+                [Button.inline("📨 پاسخ خودکار", b"ar_menu")],
+                [Button.inline("🤖 منشی", b"sec_menu")],
+                [Button.inline("🗑 حذف", b"ask_delete")],
             ]
         return [
-            [Button.inline("Activate", b"restart")],
-            [Button.inline("Panel", b"panel")],
-            [Button.inline("Settings", b"settings")],
-            [Button.inline("Block", b"block_menu")],
-            [Button.inline("Auto-Reply", b"ar_menu")],
-            [Button.inline("Secretary", b"sec_menu")],
-            [Button.inline("Delete", b"ask_delete")],
+            [Button.inline("▶️ فعال‌سازی", b"restart")],
+            [Button.inline("🎛 پنل مدیریت", b"panel")],
+            [Button.inline("⚙️ تنظیمات", b"settings")],
+            [Button.inline("🚫 بلاک مخفی", b"block_menu")],
+            [Button.inline("📨 پاسخ خودکار", b"ar_menu")],
+            [Button.inline("🤖 منشی", b"sec_menu")],
+            [Button.inline("🗑 حذف", b"ask_delete")],
         ]
 
     def status_text(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
         if not u.get("session_string"):
-            return "No selfbot."
+            return "❌ سلف‌بات نداری"
         on = uid in tasks and not tasks[uid].done()
-        s = "Active" if on else "Inactive"
+        s = "✅ فعال" if on else "⏸ غیرفعال"
         tz = u.get("timezone", DEFAULT_TZ)
         now = datetime.now(pytz.timezone(tz)).strftime("%H:%M")
-        return f"{now} | {s}"
+        return f"⏰ {now} | {s}"
 
     def panel_text(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
-        clock = "ON" if u.get("clock_enabled", True) else "OFF"
-        ar = "ON" if u.get("auto_reply_enabled") else "OFF"
-        sec = "ON" if u.get("secretary_enabled") else "OFF"
-        pv = "ON" if u.get("pv_lock") else "OFF"
-        typ = "ON" if u.get("typing_mode") else "OFF"
-        gam = "ON" if u.get("game_mode") else "OFF"
+        clock = "✅" if u.get("clock_enabled", True) else "❌"
+        ar = "✅" if u.get("auto_reply_enabled") else "❌"
+        sec = "✅" if u.get("secretary_enabled") else "❌"
+        pv = "✅" if u.get("pv_lock") else "❌"
+        typ = "✅" if u.get("typing_mode") else "❌"
+        gam = "✅" if u.get("game_mode") else "❌"
         return (
-            "=== PANEL ===\n\n"
-            f"Clock: {clock} | Font: {u.get('name_font_style', 'normal')}\n"
-            f"Auto-Reply: {ar}\nSecretary: {sec}\n"
-            f"PV Lock: {pv}\nTyping: {typ} | Game: {gam}"
+            "━━━ 🎛 پنل مدیریت ━━━\n\n"
+            f"⏰ ساعت: {clock} | 🎨 فونت: `{u.get('name_font_style', 'normal')}`\n"
+            f"📨 پاسخ خودکار: {ar}\n🤖 منشی: {sec}\n"
+            f"🔒 قفل پی‌وی: {pv}\n⌨️ تایپینگ: {typ} | 🎮 بازی: {gam}"
         )
 
     def panel_kb(uid):
@@ -1398,30 +1423,30 @@ async def run_bot():
         typ_on = u.get("typing_mode", False)
         gam_on = u.get("game_mode", False)
         return [
-            [Button.inline(f"Clock: {'ON' if c_on else 'OFF'}", b"p_clock"),
-             Button.inline(f"Font: {u.get('name_font_style', 'normal')}", b"p_nfont")],
-            [Button.inline(f"Reply: {'ON' if ar_on else 'OFF'}", b"p_ar"),
-             Button.inline(f"Sec: {'ON' if sec_on else 'OFF'}", b"p_sec")],
-            [Button.inline(f"PV: {'ON' if pv_on else 'OFF'}", b"p_pv")],
-            [Button.inline(f"Typing: {'ON' if typ_on else 'OFF'}", b"p_typ"),
-             Button.inline(f"Game: {'ON' if gam_on else 'OFF'}", b"p_gam")],
-            [Button.inline("Back", b"back")],
+            [Button.inline(f"⏰ ساعت: {'✅' if c_on else '❌'}", b"p_clock"),
+             Button.inline(f"🎨 {u.get('name_font_style', 'normal')}", b"p_nfont")],
+            [Button.inline(f"📨 پاسخ: {'✅' if ar_on else '❌'}", b"p_ar"),
+             Button.inline(f"🤖 منشی: {'✅' if sec_on else '❌'}", b"p_sec")],
+            [Button.inline(f"🔒 قفل PV: {'✅' if pv_on else '❌'}", b"p_pv")],
+            [Button.inline(f"⌨️ تایپینگ: {'✅' if typ_on else '❌'}", b"p_typ"),
+             Button.inline(f"🎮 بازی: {'✅' if gam_on else '❌'}", b"p_gam")],
+            [Button.inline("◀️ بازگشت", b"back")],
         ]
 
     def block_kb(uid):
         lst = db.get(str(uid), {}).get("silent_blocked", [])
-        rows = [[Button.inline("Add", b"block_add")]]
+        rows = [[Button.inline("➕ افزودن", b"block_add")]]
         for b in lst[:20]:
-            rows.append([Button.inline(f"X {b['name']}", f"block_del:{b['id']}".encode())])
-        rows.append([Button.inline("Back", b"back")])
+            rows.append([Button.inline(f"❌ آنبلاک: {b['name']}", f"block_del:{b['id']}".encode())])
+        rows.append([Button.inline("◀️ بازگشت", b"back")])
         return rows
 
     def block_text(uid):
         lst = db.get(str(uid), {}).get("silent_blocked", [])
         if not lst:
-            return "Block list: empty"
-        names = "\n".join(f"- {b['name']}" for b in lst)
-        return f"Blocked:\n{names}"
+            return "━━━ 🚫 بلاک مخفی ━━━\n\nکسی مسدود نیست.\n\nبا این قابلیت پیام‌های جدید هر کاربری که بلاک بشه فوراً حذف میشه."
+        names = "\n".join(f"• {b['name']}" for b in lst)
+        return f"━━━ 🚫 بلاک مخفی ━━━\n\nمسدودها:\n{names}"
 
     def ar_info(uid):
         u = db.get(str(uid), {})
@@ -1429,15 +1454,21 @@ async def run_bot():
         txt = u.get("auto_reply_text", "")
         cd = u.get("auto_reply_cooldown", 3600)
         cnt = len(u.get("auto_reply_sent_to", {}))
-        return f"Auto-Reply: {'ON' if on else 'OFF'}\nText: {txt or 'none'}\nCooldown: {cd}s | Sent: {cnt}"
+        return (
+            "━━━ 📨 پاسخ خودکار ━━━\n\n"
+            f"وضعیت: {'✅ روشن' if on else '❌ خاموش'}\n"
+            f"متن: `{txt or 'تنظیم نشده'}`\n\n"
+            f"⏱ کول‌داون: `{cd}` ثانیه\n"
+            f"📊 تعداد پاسخ‌ها: `{cnt}`"
+        )
 
     def ar_kb(uid):
         u = db.get(str(uid), {})
         on = u.get("auto_reply_enabled", False)
         return [
-            [Button.inline("Text", b"ar_set_text"), Button.inline("Cooldown", b"ar_set_cd")],
-            [Button.inline("OFF" if on else "ON", b"ar_off" if on else b"ar_on")],
-            [Button.inline("Clear History", b"ar_clear"), Button.inline("Back", b"back")],
+            [Button.inline("✏️ متن پاسخ", b"ar_set_text"), Button.inline("⏱ کول‌داون", b"ar_set_cd")],
+            [Button.inline("🔴 خاموش کردن" if on else "🟢 روشن کردن", b"ar_off" if on else b"ar_on")],
+            [Button.inline("🗑 پاک کردن تاریخچه", b"ar_clear"), Button.inline("◀️ بازگشت", b"back")],
         ]
 
     def sec_info(uid):
@@ -1445,15 +1476,20 @@ async def run_bot():
         on = u.get("secretary_enabled", False)
         txt = u.get("secretary_text", "")
         cnt = len(u.get("secretary_sent_to", {}))
-        return f"Secretary: {'ON' if on else 'OFF'}\nText: {txt or 'none'}\nReplied: {cnt}"
+        return (
+            "━━━ 🤖 منشی ━━━\n\n"
+            f"وضعیت: {'✅ روشن' if on else '❌ خاموش'}\n"
+            f"متن: `{txt or 'تنظیم نشده'}`\n\n"
+            f"📊 پاسخ داده شده: `{cnt}` نفر"
+        )
 
     def sec_kb(uid):
         u = db.get(str(uid), {})
         on = u.get("secretary_enabled", False)
         return [
-            [Button.inline("Text", b"sec_set_text")],
-            [Button.inline("OFF" if on else "ON", b"sec_off" if on else b"sec_on")],
-            [Button.inline("Reset", b"sec_reset"), Button.inline("Back", b"back")],
+            [Button.inline("✏️ متن منشی", b"sec_set_text")],
+            [Button.inline("🔴 خاموش کردن" if on else "🟢 روشن کردن", b"sec_off" if on else b"sec_on")],
+            [Button.inline("🗑 ریست تاریخچه", b"sec_reset"), Button.inline("◀️ بازگشت", b"back")],
         ]
 
     # ── /start ──────────────────────────────────
@@ -1462,10 +1498,25 @@ async def run_bot():
         uid = event.sender_id
         u = db.get(str(uid), {})
         if u.get("session_string"):
-            await event.respond(f"{status_text(uid)}\n\nMenu:", buttons=main_kb(uid))
+            await event.respond(
+                f"{status_text(uid)}\n\nاز منوی زیر استفاده کن:",
+                buttons=main_kb(uid),
+            )
         else:
             await event.respond(
-                "=== SELFBOT MAKER ===\n\nClock in name\nSilent block\nAuto-reply\nSecretary\nPV Lock\nTyping/Game\nDice/Bowl",
+                "━━━ 🤖 سلف‌بات ساز ━━━\n\n"
+                "ساعت رو توی اسم پروفایلت نشون بده!\n\n"
+                "✨ آپدیت خودکار هر دقیقه\n"
+                "🌍 پشتیبانی تایم‌زون‌های مختلف\n"
+                "🎨 فونت ساعت ۱۰ استایل\n"
+                "🚫 بلاک مخفی افراد مزاحم\n"
+                "🔇 سکوت کاربران\n"
+                "📨 پاسخ خودکار\n"
+                "🤖 منشی هوشمند\n"
+                "🔒 قفل پی‌وی\n"
+                "⌨️ حالت تایپینگ و بازی\n"
+                "🎲 سرگرمی (تاس و بولینگ)\n\n"
+                "از دکمه زیر شروع کن:",
                 buttons=main_kb(uid),
             )
 
@@ -1473,54 +1524,55 @@ async def run_bot():
     @bot.on(events.NewMessage(pattern=r"/help"))
     async def cmd_help(event):
         await event.respond(
-            "==============================\n"
-            "        FULL GUIDE\n"
-            "==============================\n\n"
-            "--- CONTROL BOT (this chat) ---\n"
-            "/start - main menu & create selfbot\n"
-            "/status - full selfbot status\n"
-            "/stop - stop selfbot\n"
-            "/block - manage silent block\n"
-            "/help - this guide\n\n"
-            "--- YOUR ACCOUNT (any chat) ---\n\n"
-            "Panel:\n"
-            "  /panel - control panel\n\n"
-            "Clock:\n"
-            "  /clock on/off\n"
-            "  /nfont [style] - 10 clock fonts\n\n"
-            "Text Font:\n"
-            "  /font - list styles\n"
-            "  /font bold text - convert\n"
-            "  /font set bold - auto font\n"
-            "  /font off\n\n"
-            "Block:\n"
-            "  /ban @username - silent block\n"
-            "  /unban @username - unblock\n"
-            "  /banlist\n\n"
-            "Mute:\n"
-            "  /mute @username\n"
-            "  /unmute @username\n"
-            "  /mutelist\n\n"
-            "PV Lock:\n"
-            "  /pvlock on/off\n\n"
-            "Secretary:\n"
-            "  /secretary text - set & enable\n"
-            "  /secretary on/off/reset\n\n"
-            "Auto-Reply:\n"
-            "  /rr text - set & enable\n"
-            "  /rr on/off\n\n"
-            "Typing/Game:\n"
-            "  /typing | /game\n\n"
-            "Group:\n"
-            "  /tag | /pin | /ping\n\n"
-            "Translate:\n"
-            "  /tr | /tr en | /tr ar\n\n"
-            "Messages:\n"
-            "  /r 100 text - repeat\n"
-            "  /del 100 - delete\n\n"
-            "Fun:\n"
-            "  /dice | /bowl\n\n"
-            "==============================",
+            "━━━━━━━━━━━━━━━━━━━━━\n"
+            "       📖 راهنمای کامل\n"
+            "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "━━ ربات کنترل (این چت) ━━\n"
+            "`/start` — منوی اصلی و ساخت سلف‌بات\n"
+            "`/status` — وضعیت کامل سلف‌بات\n"
+            "`/stop` — توقف سلف‌بات\n"
+            "`/block` — مدیریت بلاک مخفی\n"
+            "`/help` — همین راهنما\n\n"
+            "━━ اکانت خودت (توی هر چت) ━━\n\n"
+            "🎛 پنل:\n"
+            "  `/panel` — پنل مدیریت\n\n"
+            "⏰ ساعت:\n"
+            "  `/clock on`/`off`\n"
+            "  `/nfont [style]` — ۱۰ فونت ساعت\n\n"
+            "🎨 فونت متن:\n"
+            "  `/font` — لیست فونت‌ها\n"
+            "  `/font bold متن` — تبدیل فونت\n"
+            "  `/font set bold` — فونت خودکار\n"
+            "  `/font off`\n\n"
+            "🚫 بلاک مخفی:\n"
+            "  `/ban @username` — بلاک\n"
+            "  `/unban @username` — آنبلاک\n"
+            "  `/banlist` — لیست\n\n"
+            "🔇 سکوت:\n"
+            "  `/mute @username` — سکوت\n"
+            "  `/unmute @username`\n"
+            "  `/mutelist`\n\n"
+            "🔒 قفل پی‌وی:\n"
+            "  `/pvlock on`/`off`\n\n"
+            "🤖 منشی:\n"
+            "  `/secretary متن` — تنظیم و روشن\n"
+            "  `/secretary on`/`off`/`reset`\n\n"
+            "📨 پاسخ خودکار:\n"
+            "  `/rr متن` — تنظیم و روشن\n"
+            "  `/rr on`/`off`\n\n"
+            "⌨️ تایپینگ/بازی:\n"
+            "  `/typing` — تایپینگ\n"
+            "  `/game` — بازی\n\n"
+            "🏷 گروه:\n"
+            "  `/tag` `/pin` `/ping`\n\n"
+            "🌐 ترجمه:\n"
+            "  `/tr` `/tr en` `/tr ar`\n\n"
+            "📨 پیام:\n"
+            "  `/r 100 متن` — تکرار\n"
+            "  `/del 100` — حذف\n\n"
+            "🎲 سرگرمی:\n"
+            "  `/dice` 🎲 `/bowl` 🎳\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━",
         )
 
     # ── setup ───────────────────────────────────
@@ -1528,11 +1580,15 @@ async def run_bot():
     async def cb_setup(event):
         await event.answer()
         conv[event.sender_id] = {"step": "phone"}
-        await event.respond("Phone number:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond(
+            "📱 **شماره تلفنت رو بفرست:**\n\n"
+            "مثال: `+989123456789`",
+            buttons=[[Button.inline("❌ لغو", b"cancel")]],
+        )
 
     @bot.on(events.CallbackQuery(data=b"cancel"))
     async def cb_cancel(event):
-        await event.answer("Cancelled")
+        await event.answer("لغو شد")
         uid = event.sender_id
         if uid in conv and conv[uid].get("temp"):
             try:
@@ -1541,18 +1597,18 @@ async def run_bot():
                 pass
         conv.pop(uid, None)
         setting_mode.pop(uid, None)
-        await event.respond("Cancelled.", buttons=main_kb(uid))
+        await event.respond("لغو شد.", buttons=main_kb(uid))
 
     # ── control ─────────────────────────────────
     @bot.on(events.CallbackQuery(data=b"stop"))
     async def cb_stop(event):
-        await event.answer()
+        await event.answer("⏳")
         await stop_sb(event.sender_id)
-        await event.respond("Stopped.", buttons=main_kb(event.sender_id))
+        await event.respond("⛔ سلف‌بات متوقف شد.\nاسم اصلی برگردانده شد.", buttons=main_kb(event.sender_id))
 
     @bot.on(events.CallbackQuery(data=b"restart"))
     async def cb_restart(event):
-        await event.answer()
+        await event.answer("⏳")
         uid = event.sender_id
         if uid in tasks and not tasks[uid].done():
             tasks[uid].cancel()
@@ -1562,24 +1618,30 @@ async def run_bot():
             db[uid_s]["active"] = True
             save_user(uid_s)
             await start_sb(uid, bot)
-            await event.respond("Active!", buttons=main_kb(uid))
+            await event.respond("🔄 سلف‌بات فعال شد!", buttons=main_kb(uid))
         else:
-            await event.respond("No data. /start")
+            await event.respond("❌ اطلاعاتی نیست.\n/start رو بزن.")
 
     @bot.on(events.CallbackQuery(data=b"ask_delete"))
     async def cb_ask_delete(event):
         await event.answer()
-        await event.respond("Are you sure?", buttons=[[Button.inline("Yes", b"confirm_del")], [Button.inline("No", b"back")]])
+        await event.respond(
+            "⚠️ مطمئنی؟ تمام اطلاعات حذف میشه.",
+            buttons=[
+                [Button.inline("✅ بله حذف کن", b"confirm_del")],
+                [Button.inline("❌ نه", b"back")],
+            ],
+        )
 
     @bot.on(events.CallbackQuery(data=b"confirm_del"))
     async def cb_confirm_del(event):
-        await event.answer()
+        await event.answer("🗑")
         uid = event.sender_id
         await stop_sb(uid)
         uid_s = str(uid)
         delete_user(uid_s)
         db.pop(uid_s, None)
-        await event.respond("Deleted.")
+        await event.respond("🗑 تمام اطلاعات حذف شد.\n/start رو بزن.")
 
     @bot.on(events.CallbackQuery(data=b"back"))
     async def cb_back(event):
@@ -1597,66 +1659,60 @@ async def run_bot():
     async def cb_p_clock(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         db[uid_s]["clock_enabled"] = not db[uid_s].get("clock_enabled", True)
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_nfont"))
     async def cb_p_nfont(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         current = db[uid_s].get("name_font_style", "normal")
         idx = NAME_FONT_ORDER.index(current) if current in NAME_FONT_ORDER else 0
         nxt = NAME_FONT_ORDER[(idx + 1) % len(NAME_FONT_ORDER)]
         db[uid_s]["name_font_style"] = nxt
         save_user(uid_s)
-        await event.answer(nxt)
+        await event.answer(f"🎨 {nxt}")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_ar"))
     async def cb_p_ar(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         db[uid_s]["auto_reply_enabled"] = not db[uid_s].get("auto_reply_enabled", False)
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_sec"))
     async def cb_p_sec(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         db[uid_s]["secretary_enabled"] = not db[uid_s].get("secretary_enabled", False)
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_pv"))
     async def cb_p_pv(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         db[uid_s]["pv_lock"] = not db[uid_s].get("pv_lock", False)
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_typ"))
     async def cb_p_typ(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         c = clients.get(uid)
         if db[uid_s].get("typing_mode"):
             db[uid_s]["typing_mode"] = False
@@ -1672,15 +1728,14 @@ async def run_bot():
             if c:
                 action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "typing"))
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"p_gam"))
     async def cb_p_gam(event):
         uid = event.sender_id
         uid_s = str(uid)
-        if uid_s not in db:
-            return
+        if uid_s not in db: return
         c = clients.get(uid)
         if db[uid_s].get("game_mode"):
             db[uid_s]["game_mode"] = False
@@ -1696,7 +1751,7 @@ async def run_bot():
             if c:
                 action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "game"))
         save_user(uid_s)
-        await event.answer("OK")
+        await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
 
     # ── settings ────────────────────────────────
@@ -1707,35 +1762,50 @@ async def run_bot():
         u = db.get(str(uid), {})
         base = u.get("base_name") or u.get("orig_first", "...")
         await event.respond(
-            f"=== SETTINGS ===\n\nName: {base}\nTZ: {u.get('timezone', DEFAULT_TZ)}\nInterval: {u.get('update_interval', DEFAULT_INT)}s\nSeparator: {u.get('separator', ' | ')}",
-            buttons=[[Button.inline("Name", b"set_name"), Button.inline("TZ", b"set_tz")],
-                     [Button.inline("Interval", b"set_int"), Button.inline("Sep", b"set_sep")],
-                     [Button.inline("Back", b"back")]],
+            f"━━━ ⚙️ تنظیمات ━━━\n\n"
+            f"📛 اسم پایه: `{base}`\n"
+            f"🌍 تایم‌زون: `{u.get('timezone', DEFAULT_TZ)}`\n"
+            f"⏱ بازه آپدیت: هر `{u.get('update_interval', DEFAULT_INT)}` ثانیه\n"
+            f"🔗 جداکننده: `{u.get('separator', ' | ')}`",
+            buttons=[
+                [Button.inline("📛 اسم پایه", b"set_name"), Button.inline("🌍 تایم‌زون", b"set_tz")],
+                [Button.inline("⏱ بازه آپدیت", b"set_int"), Button.inline("🔗 جداکننده", b"set_sep")],
+                [Button.inline("◀️ بازگشت", b"back")],
+            ],
         )
 
     @bot.on(events.CallbackQuery(data=b"set_name"))
     async def cb_set_name(event):
         await event.answer()
         setting_mode[event.sender_id] = "name"
-        await event.respond("New name:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond("📛 اسم جدید رو بفرست:\nمثال: `علی`", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"set_tz"))
     async def cb_set_tz(event):
         await event.answer()
         setting_mode[event.sender_id] = "tz"
-        await event.respond("Timezone:\nAsia/Tehran\nAsia/Dubai\nEurope/London", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond(
+            "🌍 تایم‌زون رو بفرست:\n\n"
+            "`Asia/Tehran`\n`Asia/Dubai`\n`Europe/London`\n"
+            "`America/New_York`\n`Asia/Kabul`",
+            buttons=[[Button.inline("❌ لغو", b"cancel")]],
+        )
 
     @bot.on(events.CallbackQuery(data=b"set_int"))
     async def cb_set_int(event):
         await event.answer()
         setting_mode[event.sender_id] = "interval"
-        await event.respond("Interval (seconds): min 30", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond("⏱ بازه آپدیت رو به ثانیه بفرست:\nتوصیه: `60` — حداقل: `30`", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"set_sep"))
     async def cb_set_sep(event):
         await event.answer()
         setting_mode[event.sender_id] = "sep"
-        await event.respond("Separator:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond(
+            "🔗 جداکننده بین اسم و ساعت:\n\n"
+            "` ǀ ` ` • ` ` — ` ` | ` ` ◆ `",
+            buttons=[[Button.inline("❌ لغو", b"cancel")]],
+        )
 
     # ── block menu ──────────────────────────────
     @bot.on(events.CallbackQuery(data=b"block_menu"))
@@ -1748,11 +1818,15 @@ async def run_bot():
     async def cb_block_add(event):
         await event.answer()
         setting_mode[event.sender_id] = "block_add"
-        await event.respond("Username or ID:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond(
+            "🚫 یوزرنیم (بدون @) یا آیدی عددی رو بفرست:\n\n"
+            "مثال: `John_doe` یا `123456789`",
+            buttons=[[Button.inline("❌ لغو", b"cancel")]],
+        )
 
     @bot.on(events.CallbackQuery(pattern=rb"block_del:(-?\d+)"))
     async def cb_block_del(event):
-        await event.answer()
+        await event.answer("⏳")
         uid = event.sender_id
         ok, msg = await silent_unblock_user(uid, int(event.pattern_match.group(1)))
         await event.respond(msg)
@@ -1771,12 +1845,12 @@ async def run_bot():
         uid = event.sender_id
         uid_s = str(uid)
         if not db.get(uid_s, {}).get("auto_reply_text"):
-            await event.respond("Set text first.")
+            await event.respond("❌ اول متن پاسخ رو تنظیم کن.")
             await event.respond(ar_info(uid), buttons=ar_kb(uid))
             return
         db[uid_s]["auto_reply_enabled"] = True
         save_user(uid_s)
-        await event.respond("ON.")
+        await event.respond("✅ پاسخ خودکار روشن شد.")
         await event.respond(ar_info(uid), buttons=ar_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"ar_off"))
@@ -1785,30 +1859,35 @@ async def run_bot():
         uid = event.sender_id
         db[str(uid)]["auto_reply_enabled"] = False
         save_user(str(uid))
-        await event.respond("OFF.")
+        await event.respond("❌ پاسخ خودکار خاموش شد.")
         await event.respond(ar_info(uid), buttons=ar_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"ar_set_text"))
     async def cb_ar_set_text(event):
         await event.answer()
         setting_mode[event.sender_id] = "ar_text"
-        await event.respond("Reply text:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond("✏️ متن پاسخ خودکار رو بفرست:", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"ar_set_cd"))
     async def cb_ar_set_cd(event):
         await event.answer()
         setting_mode[event.sender_id] = "ar_cooldown"
-        await event.respond("Cooldown (seconds):", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond(
+            "⏱ کول‌داون رو به ثانیه بفرست:\n\n"
+            "`3600` = هر ۱ ساعت\n`600` = هر ۱۰ دقیقه\n`0` = هر بار\n\n"
+            "پیش‌فرض: `3600`",
+            buttons=[[Button.inline("❌ لغو", b"cancel")]],
+        )
 
     @bot.on(events.CallbackQuery(data=b"ar_clear"))
     async def cb_ar_clear(event):
-        await event.answer()
+        await event.answer("🗑")
         uid = event.sender_id
         uid_s = str(uid)
         if uid_s in db:
             db[uid_s]["auto_reply_sent_to"] = {}
             save_user(uid_s)
-        await event.respond("Cleared.")
+        await event.respond("🗑 تاریخچه پاسخ‌ها پاک شد.\n(به همه دوباره پاسخ داده میشه)")
         await event.respond(ar_info(uid), buttons=ar_kb(uid))
 
     # ── secretary menu ──────────────────────────
@@ -1824,12 +1903,12 @@ async def run_bot():
         uid = event.sender_id
         uid_s = str(uid)
         if not db.get(uid_s, {}).get("secretary_text"):
-            await event.respond("Set text first.")
+            await event.respond("❌ اول متن منشی رو تنظیم کن.")
             await event.respond(sec_info(uid), buttons=sec_kb(uid))
             return
         db[uid_s]["secretary_enabled"] = True
         save_user(uid_s)
-        await event.respond("ON.")
+        await event.respond("✅ منشی روشن شد.")
         await event.respond(sec_info(uid), buttons=sec_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"sec_off"))
@@ -1838,24 +1917,24 @@ async def run_bot():
         uid = event.sender_id
         db[str(uid)]["secretary_enabled"] = False
         save_user(str(uid))
-        await event.respond("OFF.")
+        await event.respond("❌ منشی خاموش شد.")
         await event.respond(sec_info(uid), buttons=sec_kb(uid))
 
     @bot.on(events.CallbackQuery(data=b"sec_set_text"))
     async def cb_sec_set_text(event):
         await event.answer()
         setting_mode[event.sender_id] = "sec_text"
-        await event.respond("Secretary text:", buttons=[[Button.inline("Cancel", b"cancel")]])
+        await event.respond("✏️ متن منشی رو بفرست:", buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(data=b"sec_reset"))
     async def cb_sec_reset(event):
-        await event.answer()
+        await event.answer("🗑")
         uid = event.sender_id
         uid_s = str(uid)
         if uid_s in db:
             db[uid_s]["secretary_sent_to"] = {}
             save_user(uid_s)
-        await event.respond("Reset.")
+        await event.respond("🗑 تاریخچه منشی پاک شد.\n(به همه دوباره پاسخ داده میشه)")
         await event.respond(sec_info(uid), buttons=sec_kb(uid))
 
     # ── text handler ────────────────────────────
@@ -1870,28 +1949,28 @@ async def run_bot():
             step = conv[uid]["step"]
             if step == "phone":
                 if not text.startswith("+") or len(text) < 10:
-                    await event.respond("Format: +989123456789")
+                    await event.respond("❌ فرمت اشتباه.\nمثال: `+989123456789`")
                     return
                 conv[uid]["phone"] = text
                 conv[uid]["step"] = "code"
-                msg = await event.respond("Sending code...")
+                msg = await event.respond("⏳ در حال ارسال کد تایید...")
                 tmp = TelegramClient(StringSession(), API_ID, API_HASH)
                 await tmp.connect()
                 conv[uid]["temp"] = tmp
                 try:
                     res = await tmp.send_code_request(text)
                     conv[uid]["hash"] = res.phone_code_hash
-                    await msg.edit("Send code:")
+                    await msg.edit("📨 کد تایید رو بفرست:")
                 except Exception as e:
                     conv[uid]["step"] = "phone"
                     await tmp.disconnect()
-                    await msg.edit(f"Error: {e}")
+                    await msg.edit(f"❌ خطا: `{e}`\nشماره رو دوباره بفرست.")
                 return
 
             if step == "code":
                 code = text.replace(" ", "").replace("-", "")
                 if not code.isdigit():
-                    await event.respond("Numbers only.")
+                    await event.respond("❌ کد باید عددی باشه.")
                     return
                 tmp = conv[uid]["temp"]
                 try:
@@ -1899,14 +1978,14 @@ async def run_bot():
                 except Exception as e:
                     if "password" in str(e).lower():
                         conv[uid]["step"] = "2fa"
-                        await event.respond("2FA password:")
+                        await event.respond("🔒 رمز دو مرحله‌ای رو بفرست:")
                         return
                     try:
                         await tmp.disconnect()
                     except Exception:
                         pass
                     conv.pop(uid, None)
-                    await event.respond(f"Error: {e}")
+                    await event.respond(f"❌ خطا: `{e}`\n/start رو بزن.")
                     return
                 ss = tmp.session.save()
                 try:
@@ -1917,7 +1996,12 @@ async def run_bot():
                 db[uid_s] = new_user_record(ss, conv[uid]["phone"])
                 save_user(uid_s)
                 conv.pop(uid, None)
-                await event.respond("Active!", buttons=main_kb(uid))
+                await event.respond(
+                    "━━━ ✅ سلف‌بات فعال شد! ━━━\n\n"
+                    "اسمت هر دقیقه با ساعت آپدیت میشه!\n"
+                    "از تنظیمات میتونی همه چیز رو عوض کنی.",
+                    buttons=main_kb(uid),
+                )
                 await start_sb(uid, bot)
                 return
 
@@ -1926,7 +2010,7 @@ async def run_bot():
                 try:
                     await tmp.sign_in(password=text)
                 except Exception as e:
-                    await event.respond(f"Error: {e}")
+                    await event.respond(f"❌ رمز اشتباه: `{e}`")
                     return
                 ss = tmp.session.save()
                 try:
@@ -1937,7 +2021,11 @@ async def run_bot():
                 db[uid_s] = new_user_record(ss, conv[uid]["phone"])
                 save_user(uid_s)
                 conv.pop(uid, None)
-                await event.respond("Active!", buttons=main_kb(uid))
+                await event.respond(
+                    "━━━ ✅ سلف‌بات فعال شد! ━━━\n\n"
+                    "اسمت هر دقیقه با ساعت آپدیت میشه!",
+                    buttons=main_kb(uid),
+                )
                 await start_sb(uid, bot)
                 return
 
@@ -1952,27 +2040,27 @@ async def run_bot():
             if mode == "name":
                 db[uid_s]["base_name"] = text[:32]
                 save_user(uid_s)
-                await event.respond(f"Name: {text}")
+                await event.respond(f"✅ اسم پایه: `{text}`")
             elif mode == "tz":
                 try:
                     pytz.timezone(text)
                 except Exception:
-                    await event.respond("Invalid TZ.")
+                    await event.respond("❌ تایم‌زون نامعتبر.\nمثال: `Asia/Tehran`")
                     return
                 db[uid_s]["timezone"] = text
                 save_user(uid_s)
-                await event.respond(f"TZ: {text}")
+                await event.respond(f"✅ تایم‌زون: `{text}`")
             elif mode == "interval":
                 if not text.isdigit() or int(text) < 30:
-                    await event.respond("Min 30.")
+                    await event.respond("❌ حداقل ۳۰ ثانیه.")
                     return
                 db[uid_s]["update_interval"] = int(text)
                 save_user(uid_s)
-                await event.respond(f"Interval: {text}s")
+                await event.respond(f"✅ بازه آپدیت: هر {text} ثانیه")
             elif mode == "sep":
                 db[uid_s]["separator"] = text[:10]
                 save_user(uid_s)
-                await event.respond(f"Sep: {text}")
+                await event.respond(f"✅ جداکننده: `{text}`")
             elif mode == "block_add":
                 need_restart = False
                 setting_mode.pop(uid, None)
@@ -1985,18 +2073,18 @@ async def run_bot():
                 db[uid_s]["auto_reply_text"] = text[:500]
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
-                await event.respond("Auto-reply text set.")
+                await event.respond(f"✅ متن پاسخ خودکار تنظیم شد:\n\n`{text[:500]}`")
                 await event.respond(ar_info(uid), buttons=ar_kb(uid))
                 return
             elif mode == "ar_cooldown":
                 need_restart = False
                 if not text.isdigit():
-                    await event.respond("Number.")
+                    await event.respond("❌ عدد بفرست.")
                     return
                 db[uid_s]["auto_reply_cooldown"] = int(text)
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
-                await event.respond(f"Cooldown: {text}s")
+                await event.respond(f"✅ کول‌داون: `{text}` ثانیه")
                 await event.respond(ar_info(uid), buttons=ar_kb(uid))
                 return
             elif mode == "sec_text":
@@ -2005,7 +2093,7 @@ async def run_bot():
                 db[uid_s]["secretary_enabled"] = True
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
-                await event.respond("Secretary text set.")
+                await event.respond(f"✅ متن منشی تنظیم شد:\n\n`{text[:500]}`")
                 await event.respond(sec_info(uid), buttons=sec_kb(uid))
                 return
 
@@ -2017,10 +2105,10 @@ async def run_bot():
                 db[uid_s]["active"] = True
                 save_user(uid_s)
                 await start_sb(uid, bot)
-                await event.respond("Applied.", buttons=main_kb(uid))
+                await event.respond("✅ تنظیمات اعمال شد.", buttons=main_kb(uid))
             return
 
-        await event.respond("/start", buttons=main_kb(uid))
+        await event.respond("/start رو بزن.", buttons=main_kb(uid))
 
     # ── bot commands ────────────────────────────
     @bot.on(events.NewMessage(pattern=r"/status"))
@@ -2028,26 +2116,28 @@ async def run_bot():
         uid = event.sender_id
         u = db.get(str(uid), {})
         if not u.get("session_string"):
-            await event.respond("No selfbot. /start")
+            await event.respond("❌ سلف‌بات نداری.\n/start رو بزن.")
             return
         on = uid in tasks and not tasks[uid].done()
         now = datetime.now(pytz.timezone(u.get("timezone", DEFAULT_TZ))).strftime("%Y/%m/%d %H:%M")
         await event.respond(
-            f"=== STATUS ===\n\n"
-            f"{'Active' if on else 'Inactive'}\n"
-            f"Name: {u.get('base_name') or u.get('orig_first', '...')}\n"
-            f"Clock: {'ON' if u.get('clock_enabled', True) else 'OFF'} | Font: {u.get('name_font_style', 'normal')}\n"
-            f"Reply: {'ON' if u.get('auto_reply_enabled') else 'OFF'} | Secretary: {'ON' if u.get('secretary_enabled') else 'OFF'}\n"
-            f"PV: {'ON' if u.get('pv_lock') else 'OFF'} | Muted: {len(u.get('muted_users', []))}\n"
-            f"Blocked: {len(u.get('silent_blocked', []))}\n"
-            f"Typing: {'ON' if u.get('typing_mode') else 'OFF'} | Game: {'ON' if u.get('game_mode') else 'OFF'}\n"
-            f"Time: {now}",
+            f"━━━ 📊 وضعیت سلف‌بات ━━━\n\n"
+            f"وضعیت: {'✅ فعال' if on else '⏸ غیرفعال'}\n"
+            f"📛 اسم: `{u.get('base_name') or u.get('orig_first', '...')}`\n"
+            f"⏰ ساعت: {'✅' if u.get('clock_enabled', True) else '❌'} | 🎨 فونت: `{u.get('name_font_style', 'normal')}`\n"
+            f"📨 پاسخ خودکار: {'✅' if u.get('auto_reply_enabled') else '❌'}\n"
+            f"🤖 منشی: {'✅' if u.get('secretary_enabled') else '❌'}\n"
+            f"🔒 قفل پی‌وی: {'✅' if u.get('pv_lock') else '❌'}\n"
+            f"🔇 سکوت: `{len(u.get('muted_users', []))}` نفر\n"
+            f"🚫 بلاک: `{len(u.get('silent_blocked', []))}` نفر\n"
+            f"⌨️ تایپینگ: {'✅' if u.get('typing_mode') else '❌'} | 🎮 بازی: {'✅' if u.get('game_mode') else '❌'}\n"
+            f"⏰ ساعت فعلی: {now}",
         )
 
     @bot.on(events.NewMessage(pattern=r"/stop"))
     async def cmd_stop(event):
         await stop_sb(event.sender_id)
-        await event.respond("Stopped.")
+        await event.respond("⛔ سلف‌بات متوقف شد.\nاسم اصلی برگردانده شد.")
 
     @bot.on(events.NewMessage(pattern=r"/block"))
     async def cmd_block(event):
@@ -2064,7 +2154,14 @@ async def run_bot():
             active = cur.fetchone()[0]
             cur.close()
             running = len([t for t in tasks.values() if not t.done()])
-            await event.respond(f"Total: {total} | Active: {active} | Running: {running}")
+            await event.respond(
+                f"━━━ 📊 آمار ادمین ━━━\n\n"
+                f"👥 کل کاربران: {total}\n"
+                f"✅ فعال: {active}\n"
+                f"🔄 در حال اجرا: {running}\n"
+                f"📨 پاسخ خودکار: {sum(1 for v in db.values() if v.get('auto_reply_enabled'))}\n"
+                f"🤖 منشی: {sum(1 for v in db.values() if v.get('secretary_enabled'))}",
+            )
 
     log.info("Bot ready!")
     await bot.run_until_disconnected()
@@ -2072,16 +2169,16 @@ async def run_bot():
 
 def main():
     if not API_ID:
-        log.error("API_ID required!")
+        log.error("API_ID لازمه!")
         sys.exit(1)
     if not API_HASH:
-        log.error("API_HASH required!")
+        log.error("API_HASH لازمه!")
         sys.exit(1)
     if not BOT_TOKEN:
-        log.error("BOT_TOKEN required!")
+        log.error("BOT_TOKEN لازمه!")
         sys.exit(1)
     if not DATABASE_URL:
-        log.error("DATABASE_URL required! Add Railway PostgreSQL.")
+        log.error("DATABASE_URL لازمه! PostgreSQL اضافه کن.")
         sys.exit(1)
     asyncio.run(run_bot())
 
