@@ -99,6 +99,19 @@ def init_db():
             notify_online       TEXT NOT NULL DEFAULT '[]'
         )
     """)
+    new_columns = [
+        ("keyword_filters", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("no_read", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("anti_delete", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("ar_multi_texts", "TEXT NOT NULL DEFAULT '[]'"),
+        ("ar_mode", "TEXT NOT NULL DEFAULT 'single'"),
+        ("notify_online", "TEXT NOT NULL DEFAULT '[]'"),
+    ]
+    for col_name, col_def in new_columns:
+        try:
+            cur.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col_name} {col_def}")
+        except Exception:
+            pass
     cur.execute("""
         CREATE TABLE IF NOT EXISTS kw_filters (
             id          SERIAL PRIMARY KEY,
@@ -157,12 +170,12 @@ def load_all_users():
         uid_s = str(row["uid"])
         d = dict(row)
         del d["uid"]
-        d["silent_blocked"] = json.loads(d["silent_blocked"])
-        d["auto_reply_sent_to"] = json.loads(d["auto_reply_sent_to"])
-        d["secretary_sent_to"] = json.loads(d["secretary_sent_to"])
-        d["muted_users"] = json.loads(d["muted_users"])
-        d["ar_multi_texts"] = json.loads(d["ar_multi_texts"])
-        d["notify_online"] = json.loads(d["notify_online"])
+        d["silent_blocked"] = json.loads(d.get("silent_blocked", "[]"))
+        d["auto_reply_sent_to"] = json.loads(d.get("auto_reply_sent_to", "{}"))
+        d["secretary_sent_to"] = json.loads(d.get("secretary_sent_to", "{}"))
+        d["muted_users"] = json.loads(d.get("muted_users", "[]"))
+        d["ar_multi_texts"] = json.loads(d.get("ar_multi_texts", "[]"))
+        d["notify_online"] = json.loads(d.get("notify_online", "[]"))
         result[uid_s] = d
     cur.close()
 
@@ -1060,7 +1073,7 @@ async def _cmd_ban(uid, event, arg):
     try:
         entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
     except Exception as e:
-        await event.edit(f"❌ کاربر پیدا نشد: `{e}`")
+        await event.edit(f"❌ پیدا نشد: `{e}`")
         return
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
@@ -1131,7 +1144,7 @@ async def _cmd_mute(uid, event, arg):
     try:
         entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
     except Exception as e:
-        await event.edit(f"❌ کاربر پیدا نشد: `{e}`")
+        await event.edit(f"❌ پیدا نشد: `{e}`")
         return
     tid = entity.id
     name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
@@ -1194,8 +1207,6 @@ async def _cmd_pvlock(uid, event, arg):
         db[uid_s]["pv_lock"] = False
         save_user(uid_s)
         await event.edit("🔓 قفل پی‌وی خاموش شد.")
-    else:
-        await event.edit("❌ `/pvlock on` یا `/pvlock off`")
 
 
 async def _cmd_secretary(uid, event, arg):
@@ -1324,8 +1335,6 @@ async def _cmd_clock(uid, event, arg):
             except Exception:
                 pass
         await event.edit("❌ ساعت خاموش شد.")
-    else:
-        await event.edit("❌ `/clock on` یا `/clock off`")
 
 
 async def _cmd_nfont(uid, event, arg):
@@ -1347,7 +1356,10 @@ async def _cmd_nfont(uid, event, arg):
 async def _cmd_panel(uid, event):
     uid_s = str(uid)
     u = db.get(uid_s, {})
-    def st(key): return "✅ روشن" if u.get(key) else "❌ خاموش"
+
+    def st(key):
+        return "✅ روشن" if u.get(key) else "❌ خاموش"
+
     clock = "✅ روشن" if u.get("clock_enabled", True) else "❌ خاموش"
     ar_mode = "چندتایی تصادفی" if u.get("ar_mode") == "multi" else "تکی"
     kw_c = len(u.get("kw_list", []))
@@ -1561,7 +1573,7 @@ async def _cmd_schdel(uid, event, arg):
         return
     if del_scheduled_msg(uid_s, int(arg.strip())):
         db[uid_s]["scheduled_list"] = [m for m in db[uid_s].get("scheduled_list", []) if m["id"] != int(arg.strip())]
-        await event.edit(f"✅ حذف شد.")
+        await event.edit("✅ حذف شد.")
     else:
         await event.edit("❌ پیدا نشد.")
 
@@ -1651,7 +1663,7 @@ async def _cmd_notifadd(uid, event, arg):
     name = name.strip() or (getattr(entity, "username", "") or str(tid))
     lst = db[uid_s].setdefault("notify_online", [])
     if any(n["id"] == tid for n in lst):
-        await event.edit(f"⚠️ از قبل تحت نظره.")
+        await event.edit("⚠️ از قبل تحت نظره.")
         return
     lst.append({"id": tid, "name": name})
     save_user(uid_s)
@@ -1683,7 +1695,6 @@ async def _cmd_notifdel(uid, event, arg):
     await event.edit(f"✅ `{entry['name']}` حذف شد.")
 
 
-# ★ پست خودکار گروه
 async def _cmd_ap(uid, event):
     uid_s = str(uid)
     posts = db.get(uid_s, {}).get("auto_post_list", [])
@@ -1739,7 +1750,7 @@ async def _cmd_apadd(uid, event, arg):
     except Exception:
         real_id = chat_id if isinstance(chat_id, int) else None
         if real_id is None:
-            await event.edit("❌ گروه پیدا نشد. لینک یا آیدی عددی بده.")
+            await event.edit("❌ گروه پیدا نشد.")
             return
     add_auto_post(uid_s, real_id, chat_name, text.strip(), interval_min)
     conn = get_conn()
@@ -1786,7 +1797,10 @@ async def _cmd_aptoggle(uid, event, arg):
 async def _cmd_help_self(uid, event):
     uid_s = str(uid)
     u = db.get(uid_s, {})
-    def st(key): return "✅" if u.get(key) else "❌"
+
+    def st(key):
+        return "✅" if u.get(key) else "❌"
+
     clock_st = "✅" if u.get("clock_enabled", True) else "❌"
     await event.edit(
         "━━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -2223,7 +2237,10 @@ async def run_bot():
     def panel_text(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
-        def s(k): return "✅" if u.get(k) else "❌"
+
+        def s(key):
+            return "✅" if u.get(key) else "❌"
+
         clock = "✅" if u.get("clock_enabled", True) else "❌"
         ar_m = "چندتایی" if u.get("ar_mode") == "multi" else "تکی"
         return (
@@ -2237,8 +2254,13 @@ async def run_bot():
     def panel_kb(uid):
         uid_s = str(uid)
         u = db.get(uid_s, {})
-        def on(k): return u.get(k, False)
-        def icon(k): return "✅" if on(k) else "❌"
+
+        def on(k):
+            return u.get(k, False)
+
+        def icon(k):
+            return "✅" if on(k) else "❌"
+
         return [
             [Button.inline(f"⏰ ساعت: {icon('clock_enabled') if on('clock_enabled') is not False else '❌'}", b"p_clock"),
              Button.inline(f"🎨 {u.get('name_font_style','normal')}", b"p_nfont")],
@@ -2276,8 +2298,8 @@ async def run_bot():
             f"وضعیت: {'✅' if u.get('auto_reply_enabled') else '❌'}\n"
             f"حالت: `{mode_s}`\n"
             f"متن: `{u.get('auto_reply_text') or 'تنظیم نشده'}`\n"
-            f"تعداد متن‌ها: `{len(u.get('ar_multi_texts',[]))}`\n"
-            f"کول‌داون: `{u.get('auto_reply_cooldown',3600)}` ثانیه")
+            f"تعداد متن‌ها: `{len(u.get('ar_multi_texts', []))}`\n"
+            f"کول‌داون: `{u.get('auto_reply_cooldown', 3600)}` ثانیه")
 
     def ar_kb(uid):
         on = db.get(str(uid), {}).get("auto_reply_enabled", False)
@@ -2292,7 +2314,7 @@ async def run_bot():
         return ("━━━ 🤖 منشی ━━━\n\n"
                 f"وضعیت: {'✅' if u.get('secretary_enabled') else '❌'}\n"
                 f"متن: `{u.get('secretary_text') or 'تنظیم نشده'}`\n"
-                f"پاسخ داده: `{len(u.get('secretary_sent_to',{}))}` نفر")
+                f"پاسخ داده: `{len(u.get('secretary_sent_to', {}))}` نفر")
 
     def sec_kb(uid):
         on = db.get(str(uid), {}).get("secretary_enabled", False)
@@ -2306,7 +2328,7 @@ async def run_bot():
         u = db.get(str(uid), {})
         return ("━━━ 🔑 فیلتر کلمات ━━━\n\n"
                 f"وضعیت: {'✅' if u.get('keyword_filters') else '❌'}\n"
-                f"تعداد فیلترها: `{len(u.get('kw_list',[]))}`")
+                f"تعداد فیلترها: `{len(u.get('kw_list', []))}`")
 
     def kw_kb(uid):
         on = db.get(str(uid), {}).get("keyword_filters", False)
@@ -2329,7 +2351,7 @@ async def run_bot():
         u = db.get(str(uid), {})
         return ("━━━ 🗑 Anti-Delete ━━━\n\n"
                 f"وضعیت: {'✅' if u.get('anti_delete') else '❌'}\n"
-                f"ذخیره‌شده: `{len(u.get('deleted_log',[]))}`")
+                f"ذخیره‌شده: `{len(u.get('deleted_log', []))}`")
 
     def ad_kb(uid):
         on = db.get(str(uid), {}).get("anti_delete", False)
@@ -2366,7 +2388,6 @@ async def run_bot():
             [Button.inline("◀️ بازگشت", b"back")],
         ]
 
-    # ★ پست خودکار
     def ap_info(uid):
         posts = db.get(str(uid), {}).get("auto_post_list", [])
         if not posts:
@@ -2382,9 +2403,9 @@ async def run_bot():
         posts = db.get(str(uid), {}).get("auto_post_list", [])
         for p in posts[:10]:
             st = "✅" if p.get("enabled") else "❌"
-            rows.append([Button.inline(f"{st} {p['chat_name']} | هر {p['interval_min']}m",
+            rows.append([Button.inline(f"{st} {p['chat_name']} | {p['interval_min']}m",
                                        f"ap_toggle:{p['id']}".encode()),
-                         Button.inline(f"❌", f"ap_del:{p['id']}".encode())])
+                         Button.inline("❌", f"ap_del:{p['id']}".encode())])
         rows.append([Button.inline("◀️ بازگشت", b"back")])
         return rows
 
@@ -2537,26 +2558,29 @@ async def run_bot():
             await event.respond("❌ سلف‌بات نداری.")
             return
         on = uid in tasks and not tasks[uid].done()
-        tz_name = u.get("timezone", DEFAULT_TZ)
-        now = datetime.now(pytz.timezone(tz_name)).strftime("%Y/%m/%d %H:%M")
+        now = datetime.now(pytz.timezone(u.get("timezone", DEFAULT_TZ))).strftime("%Y/%m/%d %H:%M")
         ar_m = "چندتایی" if u.get("ar_mode") == "multi" else "تکی"
-        def s(k): return "✅" if u.get(k) else "❌"
+
+        def s(k):
+            return "✅" if u.get(k) else "❌"
+
         await event.respond(
             f"━━━ 📊 وضعیت کامل ━━━\n\n"
             f"وضعیت: {'✅ فعال' if on else '⏸ غیرفعال'}\n"
-            f"📛 اسم: `{u.get('base_name') or u.get('orig_first','...')}`\n"
+            f"📛 اسم: `{u.get('base_name') or u.get('orig_first', '...')}`\n"
             f"⏰ ساعت: {now}\n\n"
-            f"⏰ ساعت: {s('clock_enabled') if u.get('clock_enabled',True) is not False else '❌'} | 🎨 فونت: `{u.get('name_font_style','normal')}`\n"
+            f"⏰ ساعت: {s('clock_enabled') if u.get('clock_enabled', True) is not False else '❌'}"
+            f" | 🎨 فونت: `{u.get('name_font_style', 'normal')}`\n"
             f"📨 پاسخ: {s('auto_reply_enabled')} ({ar_m})\n"
             f"🤖 منشی: {s('secretary_enabled')}\n"
-            f"🔑 فیلتر کلمات: {s('keyword_filters')} ({len(u.get('kw_list',[]))})\n"
+            f"🔑 فیلتر کلمات: {s('keyword_filters')} ({len(u.get('kw_list', []))})\n"
             f"🔒 PV: {s('pv_lock')} | 👀 ناخوانده: {s('no_read')}\n"
-            f"🗑 Anti-Del: {s('anti_delete')} ({len(u.get('deleted_log',[]))})\n"
-            f"📅 زمانبندی: {len(u.get('scheduled_list',[]))}\n"
-            f"📢 پست خودکار: {len(u.get('auto_post_list',[]))}\n"
-            f"🔔 اعلان: {len(u.get('notify_online',[]))}\n"
-            f"🚫 بلاک: {len(u.get('silent_blocked',[]))}\n"
-            f"🔇 سکوت: {len(u.get('muted_users',[]))}\n"
+            f"🗑 Anti-Del: {s('anti_delete')} ({len(u.get('deleted_log', []))})\n"
+            f"📅 زمانبندی: {len(u.get('scheduled_list', []))}\n"
+            f"📢 پست خودکار: {len(u.get('auto_post_list', []))}\n"
+            f"🔔 اعلان: {len(u.get('notify_online', []))}\n"
+            f"🚫 بلاک: {len(u.get('silent_blocked', []))}\n"
+            f"🔇 سکوت: {len(u.get('muted_users', []))}\n"
             f"⌨️ تایپ: {s('typing_mode')} | 🎮 بازی: {s('game_mode')}",
             buttons=[[Button.inline("◀️ بازگشت", b"back")]])
 
@@ -2629,12 +2653,17 @@ async def run_bot():
         c = clients.get(uid)
         if db[uid_s].get("typing_mode"):
             db[uid_s]["typing_mode"] = False
-            if uid in action_tasks: action_tasks[uid].cancel(); action_tasks.pop(uid, None)
+            if uid in action_tasks:
+                action_tasks[uid].cancel()
+                action_tasks.pop(uid, None)
         else:
             db[uid_s]["typing_mode"] = True
             db[uid_s]["game_mode"] = False
-            if uid in action_tasks: action_tasks[uid].cancel(); action_tasks.pop(uid, None)
-            if c: action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "typing"))
+            if uid in action_tasks:
+                action_tasks[uid].cancel()
+                action_tasks.pop(uid, None)
+            if c:
+                action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "typing"))
         save_user(uid_s)
         await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
@@ -2646,12 +2675,17 @@ async def run_bot():
         c = clients.get(uid)
         if db[uid_s].get("game_mode"):
             db[uid_s]["game_mode"] = False
-            if uid in action_tasks: action_tasks[uid].cancel(); action_tasks.pop(uid, None)
+            if uid in action_tasks:
+                action_tasks[uid].cancel()
+                action_tasks.pop(uid, None)
         else:
             db[uid_s]["game_mode"] = True
             db[uid_s]["typing_mode"] = False
-            if uid in action_tasks: action_tasks[uid].cancel(); action_tasks.pop(uid, None)
-            if c: action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "game"))
+            if uid in action_tasks:
+                action_tasks[uid].cancel()
+                action_tasks.pop(uid, None)
+            if c:
+                action_tasks[uid] = asyncio.create_task(_action_worker(uid, c, "game"))
         save_user(uid_s)
         await event.answer("✅")
         await event.respond(panel_text(uid), buttons=panel_kb(uid))
@@ -2665,9 +2699,9 @@ async def run_bot():
         base = u.get("base_name") or u.get("orig_first", "...")
         await event.respond(
             f"━━━ ⚙️ تنظیمات ━━━\n\n"
-            f"📛 اسم: `{base}`\n🌍 تایم‌زون: `{u.get('timezone',DEFAULT_TZ)}`\n"
-            f"⏱ بازه: `{u.get('update_interval',DEFAULT_INT)}` ثانیه\n"
-            f"🔗 جداکننده: `{u.get('separator',' | ')}`",
+            f"📛 اسم: `{base}`\n🌍 تایم‌زون: `{u.get('timezone', DEFAULT_TZ)}`\n"
+            f"⏱ بازه: `{u.get('update_interval', DEFAULT_INT)}` ثانیه\n"
+            f"🔗 جداکننده: `{u.get('separator', ' | ')}`",
             buttons=[
                 [Button.inline("📛 اسم", b"set_name"), Button.inline("🌍 تایم‌زون", b"set_tz")],
                 [Button.inline("⏱ بازه", b"set_int"), Button.inline("🔗 جداکننده", b"set_sep")],
@@ -2941,8 +2975,9 @@ async def run_bot():
         lines = []
         for d in reversed(recent):
             ts = d.get("ts", "")
-            if isinstance(ts, datetime): ts = ts.strftime("%m/%d %H:%M")
-            lines.append(f"• `{ts}` | `{d.get('sender_id','?')}`\n  `{(d.get('text') or '')[:50]}`")
+            if isinstance(ts, datetime):
+                ts = ts.strftime("%m/%d %H:%M")
+            lines.append(f"• `{ts}` | `{d.get('sender_id', '?')}`\n  `{(d.get('text') or '')[:50]}`")
         await event.respond(f"━━━ 🗑 حذف‌شده‌ها ━━━\n\n" + "\n".join(lines) + f"\n\nکل: `{len(deleted)}`")
 
     # ── no-read menu ────────────────────────────
@@ -3007,7 +3042,7 @@ async def run_bot():
         pid = int(event.pattern_match.group(1))
         if del_auto_post(uid_s, pid):
             db[uid_s]["auto_post_list"] = [p for p in db[uid_s].get("auto_post_list", []) if p["id"] != pid]
-            await event.respond(f"✅ حذف شد.")
+            await event.respond("✅ حذف شد.")
         else:
             await event.respond("❌ پیدا نشد.")
         await event.respond(ap_info(event.sender_id), buttons=ap_kb(event.sender_id))
@@ -3073,14 +3108,18 @@ async def run_bot():
                         conv[uid]["step"] = "2fa"
                         await event.respond("🔒 رمز دو مرحله‌ای:")
                         return
-                    try: await tmp.disconnect()
-                    except: pass
+                    try:
+                        await tmp.disconnect()
+                    except Exception:
+                        pass
                     conv.pop(uid, None)
                     await event.respond(f"❌ خطا: `{e}`")
                     return
                 ss = tmp.session.save()
-                try: await tmp.disconnect()
-                except: pass
+                try:
+                    await tmp.disconnect()
+                except Exception:
+                    pass
                 uid_s = str(uid)
                 db[uid_s] = new_user_record(ss, conv[uid]["phone"])
                 save_user(uid_s)
@@ -3097,8 +3136,10 @@ async def run_bot():
                     await event.respond(f"❌ رمز اشتباه: `{e}`")
                     return
                 ss = tmp.session.save()
-                try: await tmp.disconnect()
-                except: pass
+                try:
+                    await tmp.disconnect()
+                except Exception:
+                    pass
                 uid_s = str(uid)
                 db[uid_s] = new_user_record(ss, conv[uid]["phone"])
                 save_user(uid_s)
@@ -3124,9 +3165,11 @@ async def run_bot():
                 else:
                     for fmt in ("%Y/%m/%d %H:%M", "%Y-%m-%d %H:%M"):
                         try:
-                            send_at = pytz.timezone(db.get(uid_s, {}).get("timezone", DEFAULT_TZ)).localize(datetime.strptime(time_str, fmt))
+                            send_at = pytz.timezone(db.get(uid_s, {}).get("timezone", DEFAULT_TZ)).localize(
+                                datetime.strptime(time_str, fmt))
                             break
-                        except: pass
+                        except Exception:
+                            pass
                 if not send_at:
                     await event.respond("❌ زمان نامعتبر.")
                     return
@@ -3146,12 +3189,14 @@ async def run_bot():
                 add_scheduled_msg(uid_s, chat_id, text.strip(), send_at)
                 conn = get_conn()
                 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-                cur.execute("SELECT * FROM scheduled_msgs WHERE uid = %s AND sent = FALSE ORDER BY send_at", (int(uid_s),))
+                cur.execute("SELECT * FROM scheduled_msgs WHERE uid = %s AND sent = FALSE ORDER BY send_at",
+                            (int(uid_s),))
                 db[uid_s]["scheduled_list"] = [dict(r) for r in cur.fetchall()]
                 cur.close()
                 conv.pop(uid, None)
-                await event.respond(f"✅ زمانبندی شد!\n📅 `{send_at.strftime('%Y/%m/%d %H:%M')}`\n📝 `{text[:80]}`",
-                                    buttons=main_kb(uid))
+                await event.respond(
+                    f"✅ زمانبندی شد!\n📅 `{send_at.strftime('%Y/%m/%d %H:%M')}`\n📝 `{text[:80]}`",
+                    buttons=main_kb(uid))
                 return
 
             # مراحل پست خودکار
@@ -3237,14 +3282,18 @@ async def run_bot():
                 save_user(uid_s)
                 await event.respond(f"✅ اسم: `{text}`")
             elif mode == "tz":
-                try: pytz.timezone(text)
-                except: await event.respond("❌ تایم‌زون نامعتبر."); return
+                try:
+                    pytz.timezone(text)
+                except Exception:
+                    await event.respond("❌ تایم‌زون نامعتبر.")
+                    return
                 db[uid_s]["timezone"] = text
                 save_user(uid_s)
                 await event.respond(f"✅ تایم‌زون: `{text}`")
             elif mode == "interval":
                 if not text.isdigit() or int(text) < 30:
-                    await event.respond("❌ حداقل ۳۰."); return
+                    await event.respond("❌ حداقل ۳۰.")
+                    return
                 db[uid_s]["update_interval"] = int(text)
                 save_user(uid_s)
                 await event.respond(f"✅ بازه: {text} ثانیه")
@@ -3265,13 +3314,14 @@ async def run_bot():
                 db[uid_s]["ar_mode"] = "single"
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
-                await event.respond(f"✅ متن پاسخ تنظیم شد.")
+                await event.respond("✅ متن پاسخ تنظیم شد.")
                 await event.respond(ar_info(uid), buttons=ar_kb(uid))
                 return
             elif mode == "ar_cooldown":
                 need_restart = False
                 if not text.isdigit():
-                    await event.respond("❌ عدد بفرست."); return
+                    await event.respond("❌ عدد بفرست.")
+                    return
                 db[uid_s]["auto_reply_cooldown"] = int(text)
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
@@ -3284,17 +3334,19 @@ async def run_bot():
                 db[uid_s]["secretary_enabled"] = True
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
-                await event.respond(f"✅ متن منشی تنظیم شد.")
+                await event.respond("✅ متن منشی تنظیم شد.")
                 await event.respond(sec_info(uid), buttons=sec_kb(uid))
                 return
             elif mode == "kw_text":
                 need_restart = False
                 if "::" not in text:
-                    await event.respond("❌ فرمت: `کلمه::متن`"); return
+                    await event.respond("❌ فرمت: `کلمه::متن`")
+                    return
                 parts = text.split("::", 1)
                 kw, resp = parts[0].strip(), parts[1].strip()
                 if not kw or not resp:
-                    await event.respond("❌ هر دو لازمه."); return
+                    await event.respond("❌ هر دو لازمه.")
+                    return
                 add_kw_filter(uid_s, kw, resp)
                 conn = get_conn()
                 cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -3312,7 +3364,8 @@ async def run_bot():
                 elif text.lstrip("-").isdigit():
                     chat_id = int(text)
                 else:
-                    await event.respond("❌ `me` یا آیدی عددی."); return
+                    await event.respond("❌ `me` یا آیدی عددی.")
+                    return
                 conv[uid] = {"step": "sched_time", "chat_id": chat_id}
                 setting_mode.pop(uid, None)
                 await event.respond("📅 **مرحله ۲: زمان**\nمثال: `2h` یا `2025/01/15 10:30`",
@@ -3324,18 +3377,21 @@ async def run_bot():
                 c = clients.get(uid)
                 if not c:
                     await event.respond("❌ سلف‌بات فعال نیست.")
-                    setting_mode.pop(uid, None); return
+                    setting_mode.pop(uid, None)
+                    return
                 try:
                     entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
                 except Exception as e:
-                    await event.respond(f"❌ پیدا نشد: `{e}`"); return
+                    await event.respond(f"❌ پیدا نشد: `{e}`")
+                    return
                 tid = entity.id
                 name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
                 name = name.strip() or (getattr(entity, "username", "") or str(tid))
                 lst = db[uid_s].setdefault("notify_online", [])
                 if any(n["id"] == tid for n in lst):
-                    await event.respond(f"⚠️ از قبل تحت نظره.")
-                    setting_mode.pop(uid, None); return
+                    await event.respond("⚠️ از قبل تحت نظره.")
+                    setting_mode.pop(uid, None)
+                    return
                 lst.append({"id": tid, "name": name})
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
@@ -3350,10 +3406,12 @@ async def run_bot():
                 if tid is None:
                     for n in lst:
                         if target.lower() in n["name"].lower():
-                            tid = n["id"]; break
+                            tid = n["id"]
+                            break
                 if tid is None:
                     await event.respond("❌ پیدا نشد.")
-                    setting_mode.pop(uid, None); return
+                    setting_mode.pop(uid, None)
+                    return
                 entry = next((n for n in lst if n["id"] == tid), None)
                 if entry:
                     lst[:] = [n for n in lst if n["id"] != tid]
@@ -3368,18 +3426,21 @@ async def run_bot():
                 c = clients.get(uid)
                 if not c:
                     await event.respond("❌ سلف‌بات فعال نیست.")
-                    setting_mode.pop(uid, None); return
+                    setting_mode.pop(uid, None)
+                    return
                 try:
                     entity = await c.get_entity(int(target) if target.lstrip("-").isdigit() else target)
                 except Exception as e:
-                    await event.respond(f"❌ پیدا نشد: `{e}`"); return
+                    await event.respond(f"❌ پیدا نشد: `{e}`")
+                    return
                 tid = entity.id
                 name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
                 name = name.strip() or (getattr(entity, "username", "") or str(tid))
                 lst = db[uid_s].setdefault("muted_users", [])
                 if any(n["id"] == tid for n in lst):
-                    await event.respond(f"⚠️ از قبل ساکته.")
-                    setting_mode.pop(uid, None); return
+                    await event.respond("⚠️ از قبل ساکته.")
+                    setting_mode.pop(uid, None)
+                    return
                 lst.append({"id": tid, "name": name})
                 save_user(uid_s)
                 setting_mode.pop(uid, None)
@@ -3410,20 +3471,27 @@ async def run_bot():
         on = uid in tasks and not tasks[uid].done()
         now = datetime.now(pytz.timezone(u.get("timezone", DEFAULT_TZ))).strftime("%Y/%m/%d %H:%M")
         ar_m = "چندتایی" if u.get("ar_mode") == "multi" else "تکی"
-        def s(k): return "✅" if u.get(k) else "❌"
+
+        def s(k):
+            return "✅" if u.get(k) else "❌"
+
         await event.respond(
             f"━━━ 📊 وضعیت کامل سلف‌بات ━━━\n\n"
             f"وضعیت: {'✅ فعال' if on else '⏸ غیرفعال'}\n"
             f"📛 اسم: `{u.get('base_name') or u.get('orig_first', '...')}`\n"
             f"⏰ ساعت: {now}\n\n"
-            f"⏰ ساعت: {s('clock_enabled') if u.get('clock_enabled',True) is not False else '❌'} | 🎨 فونت: `{u.get('name_font_style','normal')}`\n"
-            f"📨 پاسخ: {s('auto_reply_enabled')} ({ar_m}) | 🤖 منشی: {s('secretary_enabled')}\n"
-            f"🔑 فیلتر کلمات: {s('keyword_filters')} ({len(u.get('kw_list',[]))})\n"
+            f"⏰ ساعت: {s('clock_enabled') if u.get('clock_enabled', True) is not False else '❌'}"
+            f" | 🎨 فونت: `{u.get('name_font_style', 'normal')}`\n"
+            f"📨 پاسخ: {s('auto_reply_enabled')} ({ar_m})"
+            f" | 🤖 منشی: {s('secretary_enabled')}\n"
+            f"🔑 فیلتر کلمات: {s('keyword_filters')} ({len(u.get('kw_list', []))})\n"
             f"🔒 PV: {s('pv_lock')} | 👀 ناخوانده: {s('no_read')}\n"
-            f"🗑 Anti-Del: {s('anti_delete')} ({len(u.get('deleted_log',[]))})\n"
-            f"📅 زمانبندی: {len(u.get('scheduled_list',[]))} | 📢 پست خودکار: {len(u.get('auto_post_list',[]))}\n"
-            f"🔔 اعلان: {len(u.get('notify_online',[]))}\n"
-            f"🚫 بلاک: {len(u.get('silent_blocked',[]))} | 🔇 سکوت: {len(u.get('muted_users',[]))}\n"
+            f"🗑 Anti-Del: {s('anti_delete')} ({len(u.get('deleted_log', []))})\n"
+            f"📅 زمانبندی: {len(u.get('scheduled_list', []))}"
+            f" | 📢 پست خودکار: {len(u.get('auto_post_list', []))}\n"
+            f"🔔 اعلان: {len(u.get('notify_online', []))}\n"
+            f"🚫 بلاک: {len(u.get('silent_blocked', []))}"
+            f" | 🔇 سکوت: {len(u.get('muted_users', []))}\n"
             f"⌨️ تایپ: {s('typing_mode')} | 🎮 بازی: {s('game_mode')}")
 
     @bot.on(events.NewMessage(pattern=r"/stop"))
