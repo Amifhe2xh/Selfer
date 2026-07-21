@@ -17,7 +17,7 @@ from telethon.sessions import StringSession
 from telethon.tl.functions.account import UpdateProfileRequest
 from telethon.tl.functions.users import GetFullUserRequest
 from telethon.tl.functions.contacts import BlockRequest, UnblockRequest
-from telethon.tl.functions.messages import SetTypingRequest
+from telethon.tl.functions.messages import SetTypingRequest, CheckChatInviteRequest
 from telethon.tl.types import (
     SendMessageTypingAction,
     SendMessageGamePlayAction,
@@ -38,9 +38,6 @@ DEFAULT_INT = int(os.environ.get("UPDATE_INTERVAL", "60"))
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-# ═══════════════════════════════════════════════════
-# LOGGING
-# ═══════════════════════════════════════════════════
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("service")
 
@@ -377,14 +374,84 @@ def toggle_auto_post(uid_s, pid):
     return ok
 
 
+# ═══════════════════════════════════════════════════
+# CHAT RESOLUTION
+# ═══════════════════════════════════════════════════
+def _entity_name(entity):
+    if hasattr(entity, "title") and entity.title:
+        return entity.title
+    first = getattr(entity, "first_name", "") or ""
+    last = getattr(entity, "last_name", "") or ""
+    name = f"{first} {last}".strip()
+    return name or getattr(entity, "username", "") or str(entity.id)
+
+
+async def resolve_chat_entity(c, text):
+    text = text.strip()
+
+    # 1) آیدی عددی
+    if text.lstrip("-").isdigit():
+        try:
+            entity = await c.get_entity(int(text))
+            return entity, _entity_name(entity)
+        except Exception:
+            pass
+
+    # 2) لینک دعوت (پرایوت)
+    invite_hash = None
+    for pat in [
+        r"(?:https?://)?t\.me/\+([a-zA-Z0-9_-]+)",
+        r"(?:https?://)?t\.me/joinchat/([a-zA-Z0-9_-]+)",
+    ]:
+        m = re.match(pat, text, re.IGNORECASE)
+        if m:
+            invite_hash = m.group(1)
+            break
+
+    if invite_hash:
+        try:
+            result = await c(CheckChatInviteRequest(invite_hash))
+            if hasattr(result, "chat") and result.chat:
+                return result.chat, result.chat.title
+        except Exception:
+            pass
+
+    # 3) یوزرنیم یا لینک عمومی
+    username = None
+    for pat in [
+        r"(?:https?://)?t\.me/([a-zA-Z_]\w{3,30})",
+        r"(?:https?://)?telegram\.me/([a-zA-Z_]\w{3,30})",
+        r"^@?([a-zA-Z_]\w{3,30})$",
+    ]:
+        m = re.match(pat, text, re.IGNORECASE)
+        if m:
+            username = m.group(1)
+            break
+
+    if username:
+        try:
+            entity = await c.get_entity(username)
+            return entity, _entity_name(entity)
+        except Exception:
+            pass
+
+    # 4) جستجو در دیالوگ‌ها
+    query = text.lower()
+    async for dialog in c.iter_dialogs():
+        if dialog.title and query in dialog.title.lower():
+            return dialog.entity, dialog.title
+
+    return None, None
+
+
 def parse_chat_link(text):
     text = text.strip()
     if text.lstrip("-").isdigit():
         return int(text), text
     patterns = [
-        r'(?:https?://)?t\.me/([a-zA-Z_]\w{3,30})',
-        r'(?:https?://)?telegram\.me/([a-zA-Z_]\w{3,30})',
-        r'^@?([a-zA-Z_]\w{3,30})$',
+        r"(?:https?://)?t\.me/([a-zA-Z_]\w{3,30})",
+        r"(?:https?://)?telegram\.me/([a-zA-Z_]\w{3,30})",
+        r"^@?([a-zA-Z_]\w{3,30})$",
     ]
     for pat in patterns:
         m = re.match(pat, text, re.IGNORECASE)
@@ -854,6 +921,23 @@ def unregister_incoming_handler(uid, c):
 # ═══════════════════════════════════════════════════
 # SELF-ACCOUNT COMMANDS
 # ═══════════════════════════════════════════════════
+async def _cmd_chatid(event):
+    chat = await event.get_chat()
+    chat_id = chat.id
+    if hasattr(chat, "megagroup") or hasattr(chat, "broadcast"):
+        full_id = int(f"-100{chat_id}")
+    else:
+        full_id = chat_id
+    title = getattr(chat, "title", None) or getattr(chat, "username", "") or str(chat_id)
+    await event.edit(
+        f"📋 **اطلاعات چت:**\n\n"
+        f"📛 نام: `{title}`\n"
+        f"🆔 آیدی: `{full_id}`\n\n"
+        f"💡 آیدی رو برای پست خودکار یا زمانبندی استفاده کن:\n"
+        f"`/apadd {full_id} | 30 | متن پیام`\n"
+        f"`/schadd {full_id} | 2h | متن پیام`")
+
+
 async def _cmd_tag(event, arg):
     chat = await event.get_chat()
     if not (getattr(chat, "megagroup", False) or getattr(chat, "gigagroup", False)
@@ -1076,8 +1160,7 @@ async def _cmd_ban(uid, event, arg):
         await event.edit(f"❌ پیدا نشد: `{e}`")
         return
     tid = entity.id
-    name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-    name = name.strip() or (getattr(entity, "username", "") or str(tid))
+    name = _entity_name(entity)
     lst = db[uid_s].setdefault("silent_blocked", [])
     if any(b["id"] == tid for b in lst):
         await event.edit(f"⚠️ `{name}` از قبل مسدوده.")
@@ -1147,8 +1230,7 @@ async def _cmd_mute(uid, event, arg):
         await event.edit(f"❌ پیدا نشد: `{e}`")
         return
     tid = entity.id
-    name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-    name = name.strip() or (getattr(entity, "username", "") or str(tid))
+    name = _entity_name(entity)
     lst = db[uid_s].setdefault("muted_users", [])
     if any(b["id"] == tid for b in lst):
         await event.edit(f"⚠️ `{name}` از قبل ساکته.")
@@ -1406,10 +1488,11 @@ async def _cmd_panel(uid, event):
         "`/noread on/off` — بدون خواندن\n"
         "`/antidelete on/off` `/undelete`\n"
         "`/sched` `/schadd` `/schdel` — زمانبندی\n"
-        "`/ap` `/apadd` `/apdel` — پست خودکار\n"
+        "`/ap` `/apadd` `/apdel` `/aptoggle` — پست خودکار\n"
         "`/notif` `/notifadd` `/notifdel` — اعلان\n"
         "`/ban` `/unban` — بلاک مخفی\n"
         "`/mute` `/unmute` — سکوت\n"
+        "`/chatid` — آیدی گروه/کانال\n"
         "`/tag` `/pin` `/ping` — گروه\n"
         "`/tr` — ترجمه\n"
         "`/r 100 متن` — تکرار\n`/del 100` — حذف\n"
@@ -1508,7 +1591,8 @@ async def _cmd_sched(uid, event):
         await event.edit(
             "📅 **پیام زمانبندی‌شده:**\n\nخالی.\n\n"
             "`/schadd chat_id | زمان | متن`\n"
-            "مثال: `/schadd me | 2h | یادآوری`")
+            "مثال: `/schadd me | 2h | یادآوری`\n"
+            "مثال: `/schadd -100123456 | 30m | سلام`")
         return
     lines = []
     for m in scheduled:
@@ -1524,7 +1608,14 @@ async def _cmd_schadd(uid, event, arg):
     uid_s = str(uid)
     args = [a.strip() for a in arg.split("|")]
     if len(args) < 3:
-        await event.edit("❌ فرمت: `/schadd chat_id | زمان | متن`")
+        await event.edit(
+            "❌ فرمت: `/schadd chat_id | زمان | متن`\n\n"
+            "مثال:\n"
+            "• `/schadd me | 2h | یادآوری`\n"
+            "• `/schadd -100123456 | 30m | سلام`\n"
+            "• `/schadd @group | 1d2h | متن`\n\n"
+            "💡 برای گروه پرایوت:\n"
+            "توی گروه `/chatid` بزن و آیدی رو کپی کن")
         return
     chat_str, time_str, text = args[0], args[1], args[2]
     chat_id = 0
@@ -1533,7 +1624,7 @@ async def _cmd_schadd(uid, event, arg):
     elif chat_str.lstrip("-").isdigit():
         chat_id = int(chat_str)
     else:
-        await event.edit("❌ chat_id باید عدد باشه یا `me`.")
+        await event.edit("❌ chat_id باید عدد باشه یا `me`.\n\n💡 توی گروه `/chatid` بزن.")
         return
     send_at = None
     rel = re.match(r'^(\d+[hmd])+$', time_str.lower())
@@ -1659,8 +1750,7 @@ async def _cmd_notifadd(uid, event, arg):
         await event.edit(f"❌ پیدا نشد: `{e}`")
         return
     tid = entity.id
-    name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-    name = name.strip() or (getattr(entity, "username", "") or str(tid))
+    name = _entity_name(entity)
     lst = db[uid_s].setdefault("notify_online", [])
     if any(n["id"] == tid for n in lst):
         await event.edit("⚠️ از قبل تحت نظره.")
@@ -1702,9 +1792,9 @@ async def _cmd_ap(uid, event):
         await event.edit(
             "📢 **پست خودکار گروه:**\n\nخالی.\n\n"
             "`/apadd @group | 30 | متن پیام`\n"
-            "مثال: `/apadd @mychannel | 60 | سلام به همه`\n\n"
-            "لینک هم قبوله:\n"
-            "`/apadd t.me/mychannel | 120 | متن`")
+            "`/apadd -100123456 | 60 | متن`\n"
+            "`/apadd t.me/+InviteHash | 120 | متن`\n\n"
+            "💡 آیدی گروه پرایوت رو با `/chatid` توی گروه بگیر")
         return
     lines = []
     for p in posts:
@@ -1722,8 +1812,10 @@ async def _cmd_apadd(uid, event, arg):
             "❌ فرمت: `/apadd لینک‌گروه | دقیقه | متن`\n\n"
             "مثال:\n"
             "• `/apadd @mygroup | 30 | سلام`\n"
-            "• `/apadd t.me/mygroup | 60 | متن پیام`\n"
-            "• `/apadd -100123456 | 120 | متن`")
+            "• `/apadd t.me/+InviteHash | 60 | متن`\n"
+            "• `/apadd -100123456 | 120 | متن`\n\n"
+            "💡 آیدی گروه پرایوت:\n"
+            "توی گروه `/chatid` بزن")
         return
     link_str, interval_str, text = args[0], args[1], args[2]
     if not interval_str.isdigit() or int(interval_str) < 1:
@@ -1737,21 +1829,22 @@ async def _cmd_apadd(uid, event, arg):
     if not c:
         await event.edit("❌ سلف‌بات فعال نیست.")
         return
-    chat_id, chat_name = parse_chat_link(link_str)
-    if chat_id is None:
-        await event.edit("❌ لینک گروه نامعتبر.")
+
+    entity, chat_name = await resolve_chat_entity(c, link_str)
+    if not entity:
+        await event.edit(
+            "❌ گروه پیدا نشد!\n\n"
+            "💡 **راهنما:**\n"
+            "۱. توی گروه پرایوت `/chatid` بزن\n"
+            "۲. آیدی عددی رو اینجا استفاده کن\n\n"
+            "یا لینک دعوت: `t.me/+InviteHash`")
         return
-    try:
-        entity = await c.get_entity(chat_id)
-        real_id = entity.id
-        chat_name = getattr(entity, "title", None) or getattr(entity, "username", None) or str(real_id)
-        if hasattr(entity, "id") and hasattr(entity, "megagroup"):
-            real_id = int(f"-100{entity.id}")
-    except Exception:
-        real_id = chat_id if isinstance(chat_id, int) else None
-        if real_id is None:
-            await event.edit("❌ گروه پیدا نشد.")
-            return
+
+    real_id = entity.id
+    chat_name = _entity_name(entity)
+    if hasattr(entity, "megagroup") or hasattr(entity, "broadcast"):
+        real_id = int(f"-100{entity.id}")
+
     add_auto_post(uid_s, real_id, chat_name, text.strip(), interval_min)
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -1850,13 +1943,16 @@ async def _cmd_help_self(uid, event):
         "━━ 📅 پیام زمانبندی‌شده ━━\n"
         "`/sched` — لیست پیام‌ها\n"
         "`/schadd chat_id | زمان | متن` — افزودن\n`/schdel id` — حذف\n"
-        "فرمت زمان: `2h` `30m` `1d2h` `2025/01/15 10:30`\n\n"
+        "فرمت زمان: `2h` `30m` `1d2h` `2025/01/15 10:30`\n"
+        "💡 آیدی گروه پرایوت: توی گروه `/chatid` بزن\n\n"
 
         "━━ 📢 پست خودکار گروه ━━\n"
         "`/ap` — لیست پست‌های خودکار\n"
-        "`/apadd @group | دقیقه | متن` — افزودن\n`/apdel id` — حذف\n`/aptoggle id` — فعال/غیرفعال\n"
+        "`/apadd @group | دقیقه | متن` — افزودن\n"
+        "`/apdel id` — حذف\n`/aptoggle id` — فعال/غیرفعال\n"
         "مثال: `/apadd @mychannel | 60 | متن پیام`\n"
-        "لینک هم قبوله: `/apadd t.me/mygroup | 30 | سلام`\n\n"
+        "لینک دعوت: `/apadd t.me/+hash | 30 | سلام`\n"
+        "آیدی عددی: `/apadd -100123456 | 120 | متن`\n\n"
 
         "━━ 🔔 اعلان آنلاین شدن ━━\n"
         "`/notif` — لیست کاربران\n`/notifadd @username` — افزودن\n`/notifdel @username` — حذف\n"
@@ -1876,6 +1972,7 @@ async def _cmd_help_self(uid, event):
         "این دو حالت یکدیگر رو غیرفعال می‌کنن\n\n"
 
         "━━ 🏷 گروه/کانال ━━\n"
+        "`/chatid` — آیدی عددی گروه/کانال فعلی\n"
         "`/tag [متن]` — تگ کردن همه اعضا\n`/pin` (ریپلای) — پین پیام\n`/ping` — تست اتصال\n\n"
 
         "━━ 🌐 ترجمه ━━\n"
@@ -1955,6 +2052,7 @@ def register_command_handlers(uid, c):
                 elif cmd == "/apadd":   await _cmd_apadd(uid, event, arg)
                 elif cmd == "/apdel":   await _cmd_apdel(uid, event, arg)
                 elif cmd == "/aptoggle": await _cmd_aptoggle(uid, event, arg)
+                elif cmd == "/chatid":  await _cmd_chatid(event)
             except Exception as e:
                 log.warning(f"[{uid}] cmd {cmd}: {e}")
                 try:
@@ -1996,8 +2094,7 @@ async def silent_block_user(uid, target):
     except Exception as e:
         return False, f"❌ پیدا نشد: `{e}`"
     tid = entity.id
-    name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-    name = name.strip() or (getattr(entity, "username", "") or str(tid))
+    name = _entity_name(entity)
     lst = db[uid_s].setdefault("silent_blocked", [])
     if any(b["id"] == tid for b in lst):
         return False, f"⚠️ `{name}` از قبل مسدوده."
@@ -2460,11 +2557,13 @@ async def run_bot():
             "  `/noread on`/`off` — بدون خواندن\n"
             "  `/antidelete on`/`off` — Anti-Delete\n`/undelete` — مشاهده\n\n"
             "━━ 📅 زمانبندی پیام ━━\n"
-            "  `/sched` — لیست\n`/schadd chat|زمان|متن` — افزودن\n`/schdel id` — حذف\n\n"
+            "  `/sched` — لیست\n`/schadd chat|زمان|متن` — افزودن\n`/schdel id` — حذف\n"
+            "  💡 آیدی گروه پرایوت: `/chatid` توی گروه بزن\n\n"
             "━━ 📢 پست خودکار گروه ━━\n"
             "  `/ap` — لیست\n"
             "  `/apadd @group | دقیقه | متن` — افزودن\n"
-            "  `/apdel id` — حذف\n`/aptoggle id` — فعال/غیرفعال\n\n"
+            "  `/apdel id` — حذف\n`/aptoggle id` — فعال/غیرفعال\n"
+            "  💡 آیدی گروه پرایوت: `/chatid` توی گروه بزن\n\n"
             "━━ 🔔 اعلان آنلاین ━━\n"
             "  `/notif` — لیست\n`/notifadd @u` — افزودن\n`/notifdel @u` — حذف\n\n"
             "━━ 🚫 بلاک و سکوت ━━\n"
@@ -2473,6 +2572,7 @@ async def run_bot():
             "━━ ⌨️ تایپینگ و بازی ━━\n"
             "  `/typing` — تایپینگ\n`/game` — بازی\n\n"
             "━━ 🏷 گروه ━━\n"
+            "  `/chatid` — آیدی عددی گروه/کانال\n"
             "  `/tag` — تگ همه\n`/pin` — پین\n`/ping` — تست\n\n"
             "━━ 🌐 ترجمه ━━\n"
             "  `/tr` `/tr en` `/tr ar`\n\n"
@@ -2939,7 +3039,8 @@ async def run_bot():
     async def cb_sched_add(event):
         await event.answer()
         setting_mode[event.sender_id] = "sched_chat"
-        await event.respond("📅 **مرحله ۱: چت مقصد**\n\n`me` یا آیدی عددی:",
+        await event.respond("📅 **مرحله ۱: چت مقصد**\n\n`me` یا آیدی عددی:"
+                            "\n💡 آیدی گروه پرایوت: توی گروه `/chatid` بزن",
                             buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     # ── anti-delete menu ────────────────────────
@@ -3016,8 +3117,10 @@ async def run_bot():
             "📢 **مرحله ۱: گروه/کانال**\n\n"
             "لینک، یوزرنیم یا آیدی عددی:\n"
             "مثال: `@mygroup`\n"
-            "یا: `t.me/mygroup`\n"
-            "یا: `-1001234567890`",
+            "لینک دعوت: `t.me/+InviteHash`\n"
+            "آیدی عددی: `-1001234567890`\n\n"
+            "💡 آیدی گروه پرایوت:\n"
+            "توی گروه `/chatid` بزن و آیدی رو کپی کن",
             buttons=[[Button.inline("❌ لغو", b"cancel")]])
 
     @bot.on(events.CallbackQuery(pattern=rb"ap_toggle:(\d+)"))
@@ -3207,21 +3310,23 @@ async def run_bot():
                     await event.respond("❌ سلف‌بات فعال نیست.")
                     conv.pop(uid, None)
                     return
-                chat_id, chat_name = parse_chat_link(text)
-                if chat_id is None:
-                    await event.respond("❌ لینک نامعتبر.\nمثال: `@mygroup` یا `t.me/mygroup`")
+
+                entity, chat_name = await resolve_chat_entity(c, text)
+                if not entity:
+                    await event.respond(
+                        "❌ گروه پیدا نشد!\n\n"
+                        "💡 **برای گروه‌های پرایوت:**\n"
+                        "توی گروه `/chatid` بزن و آیدی عددی رو بفرست\n\n"
+                        "یا لینک دعوت: `t.me/+hash`")
                     return
-                try:
-                    entity = await c.get_entity(chat_id)
+
+                real_id = entity.id
+                chat_name = _entity_name(entity)
+                if hasattr(entity, "megagroup") or hasattr(entity, "broadcast"):
+                    real_id = int(f"-100{entity.id}")
+                elif entity.id > 0:
                     real_id = entity.id
-                    chat_name = getattr(entity, "title", None) or getattr(entity, "username", None) or str(real_id)
-                    if hasattr(entity, "megagroup") or hasattr(entity, "broadcast"):
-                        real_id = int(f"-100{entity.id}")
-                    elif entity.id > 0:
-                        real_id = entity.id
-                except Exception as e:
-                    await event.respond(f"❌ گروه پیدا نشد: `{e}`")
-                    return
+
                 conv[uid]["step"] = "ap_text"
                 conv[uid]["ap_chat_id"] = real_id
                 conv[uid]["ap_chat_name"] = chat_name
@@ -3364,7 +3469,7 @@ async def run_bot():
                 elif text.lstrip("-").isdigit():
                     chat_id = int(text)
                 else:
-                    await event.respond("❌ `me` یا آیدی عددی.")
+                    await event.respond("❌ `me` یا آیدی عددی.\n\n💡 توی گروه `/chatid` بزن.")
                     return
                 conv[uid] = {"step": "sched_time", "chat_id": chat_id}
                 setting_mode.pop(uid, None)
@@ -3385,8 +3490,7 @@ async def run_bot():
                     await event.respond(f"❌ پیدا نشد: `{e}`")
                     return
                 tid = entity.id
-                name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-                name = name.strip() or (getattr(entity, "username", "") or str(tid))
+                name = _entity_name(entity)
                 lst = db[uid_s].setdefault("notify_online", [])
                 if any(n["id"] == tid for n in lst):
                     await event.respond("⚠️ از قبل تحت نظره.")
@@ -3434,8 +3538,7 @@ async def run_bot():
                     await event.respond(f"❌ پیدا نشد: `{e}`")
                     return
                 tid = entity.id
-                name = (getattr(entity, "first_name", "") or "") + " " + (getattr(entity, "last_name", "") or "")
-                name = name.strip() or (getattr(entity, "username", "") or str(tid))
+                name = _entity_name(entity)
                 lst = db[uid_s].setdefault("muted_users", [])
                 if any(n["id"] == tid for n in lst):
                     await event.respond("⚠️ از قبل ساکته.")
