@@ -1540,13 +1540,21 @@ async def _cmd_twin(uid, event, arg):
 
     if arg == "scan" or arg == "اسکن":
         # Scan chat messages for analysis
-        if not event.is_private:
-            await event.reply("⚠️ این دستور فقط در پیوی ربات کار میکنه.")
-            return
+        # Usage: /twin scan (current chat) or /twin scan @username or /twin scan chat_id
+        target_chat = event.chat_id
+        scan_arg = arg[4:].strip() if len(arg.split()) > 1 else ""
+        if scan_arg:
+            try:
+                target_chat = await event.client.get_entity(scan_arg)
+                target_chat = target_chat.id
+            except Exception:
+                await event.reply(f"❌ چت `{scan_arg}` پیدا نشد.")
+                return
+
         await event.reply("🔍 در حال اسکن پیام‌ها...")
         try:
             messages = []
-            async for msg in event.client.iter_messages(event.chat_id, limit=500):
+            async for msg in event.client.iter_messages(target_chat, limit=500):
                 if msg.sender_id == uid and msg.text and not msg.photo and not msg.voice and not msg.video and not msg.document and not msg.audio and not msg.sticker and not msg.video_note:
                     messages.append(msg)
             analysis = await analyze_chat_messages(messages)
@@ -1619,7 +1627,8 @@ async def _cmd_twin(uid, event, arg):
     await event.reply(
         "🤖 **Digital Twin — دستورات:**\n\n"
         "• `/twin start` — شروع پرسشنامه\n"
-        "• `/twin scan` — اسکن پیام‌های چت (چند بار مجاز!)\n"
+        "• `/twin scan` — اسکن چت فعلی (۵۰۰ پیام فقط متن)\n"
+        "• `/twin scan @username` — اسکن چت با یه نفر خاص\n"
         "• `/twin on` — فعال‌سازی\n"
         "• `/twin off` — غیرفعال\n"
         "• `/twin profile` — نمایش پروفایل\n"
