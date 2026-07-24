@@ -1511,7 +1511,7 @@ async def _cmd_twin(uid, event, arg):
         await event.reply("❌ پرسشنامه لغو شد.")
         return
 
-    if arg == "on":
+    if arg == "on" or arg == "فعال":
         if u.get("twin_profile"):
             db[uid_s]["twin_enabled"] = True
             save_user(uid_s)
@@ -1520,7 +1520,7 @@ async def _cmd_twin(uid, event, arg):
             await event.reply("⚠️ اول پرسشنامه رو پر کن: /twin start")
         return
 
-    if arg == "off":
+    if arg == "off" or arg == "غیرفعال":
         db[uid_s]["twin_enabled"] = False
         save_user(uid_s)
         await event.reply("🔴 Digital Twin غیرفعال شد.")
@@ -1547,11 +1547,12 @@ async def _cmd_twin(uid, event, arg):
         await event.reply("\n".join(lines))
         return
 
-    if arg == "scan" or arg == "اسکن":
+    if arg.startswith("scan") or arg.startswith("اسکن"):
         # Scan chat messages for analysis
         # Usage: /twin scan (current chat) or /twin scan @username or /twin scan chat_id
         target_chat = event.chat_id
-        scan_arg = arg[4:].strip() if len(arg.split()) > 1 else ""
+        scan_parts = arg.split(maxsplit=1)
+        scan_arg = scan_parts[1].strip() if len(scan_parts) > 1 else ""
         if scan_arg:
             try:
                 target_chat = await event.client.get_entity(scan_arg)
@@ -2361,6 +2362,15 @@ async def _cmd_help_self(uid, event):
 
         "━━ 🎲 سرگرمی ━━\n"
         "`/dice` — ارسال تاس 🎲\n`/bowl` — ارسال بولینگ 🎳\n\n"
+
+        "━━ 🤖 دوقلوی دیجیتال ━━\n"
+        "`/twin start` — شروع پرسشنامه\n"
+        "`/twin scan` — اسکن چت فعلی\n"
+        "`/twin scan @username` — اسکن چت خاص\n"
+        "`/twin on/off` — فعال/غیرفعال\n"
+        "`/twin profile` — نمایش پروفایل\n"
+        "`/twin test` — تست شخصیت\n"
+        "`/twin reset` — پاک کردن پروفایل\n\n"
 
         "━━ 📖 ربات کنترل (چت خصوصی با بات) ━━\n"
         "`/start` — منوی اصلی و ساخت سلف‌بات\n`/status` — وضعیت کامل\n"
