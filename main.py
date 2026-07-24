@@ -8,7 +8,7 @@ import random
 import re
 from datetime import datetime, timedelta
 from collections import defaultdict
-
+import aiohttp
 import pytz
 import psycopg2
 import psycopg2.extras
@@ -38,8 +38,48 @@ DEFAULT_INT = int(os.environ.get("UPDATE_INTERVAL", "60"))
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
+AI_API_BASE = os.environ.get("AI_API_BASE", "https://hermes-railway-production-8d21.up.railway.app/v1")
+AI_API_KEY  = os.environ.get("AI_API_KEY", "sk-6d104f6ab1112776-8seizg-1bb2a0b1")
+AI_MODEL     = os.environ.get("AI_MODEL", "deepseek/deepseek-chat-v3-0324")
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("service")
+
+AI_SYSTEM_DEFAULT = "تو یک منشی هوشمند هستی. به پیام‌هایی که بهت میرسه با ادب و حرفه‌ای جواب بده. جواب‌هات کوتاه و مفید باشه."
+
+
+async def get_ai_response(system_prompt: str, user_message: str) -> str:
+    """Call AI API and return the response text."""
+    url = f"{AI_API_BASE}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {AI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": AI_MODEL,
+        "messages": [
+            {"role": "system", "content": system_prompt or AI_SYSTEM_DEFAULT},
+            {"role": "user", "content": user_message},
+        ],
+        "max_tokens": 1024,
+        "temperature": 0.7,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    log.error("AI API error %s: %s", resp.status, body[:200])
+                    return "❌ مشکلی پیش اومد، لطفاً بعداً دوباره امتحان کن."
+                data = await resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+    except asyncio.TimeoutError:
+        log.error("AI API timeout")
+        return "⏳ پاسخ دیر شد، لطفاً دوباره امتحان کن."
+    except Exception as e:
+        log.error("AI API exception: %s", e)
+        return "❌ مشکلی پیش اومد، لطفاً بعداً دوباره امتحان کن."
+
 
 # ═══════════════════════════════════════════════════
 # POSTGRES DATABASE
@@ -103,6 +143,7 @@ def init_db():
         ("ar_multi_texts", "TEXT NOT NULL DEFAULT '[]'"),
         ("ar_mode", "TEXT NOT NULL DEFAULT 'single'"),
         ("notify_online", "TEXT NOT NULL DEFAULT '[]'"),
+        ("secretary_ai", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ]
     for col_name, col_def in new_columns:
         try:
@@ -223,9 +264,10 @@ def save_user(uid_s):
             auto_reply_enabled, auto_reply_text, auto_reply_cooldown, auto_reply_sent_to,
             clock_enabled, name_font_style, secretary_enabled, secretary_text, secretary_sent_to,
             muted_users, pv_lock, typing_mode, game_mode,
-            keyword_filters, no_read, anti_delete, ar_multi_texts, ar_mode, notify_online
+            keyword_filters, no_read, anti_delete, ar_multi_texts, ar_mode, notify_online,
+            secretary_ai
         ) VALUES (
-            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
         ) ON CONFLICT (uid) DO UPDATE SET
             session_string=EXCLUDED.session_string, phone=EXCLUDED.phone,
             base_name=EXCLUDED.base_name, timezone=EXCLUDED.timezone,
@@ -243,7 +285,8 @@ def save_user(uid_s):
             game_mode=EXCLUDED.game_mode, keyword_filters=EXCLUDED.keyword_filters,
             no_read=EXCLUDED.no_read, anti_delete=EXCLUDED.anti_delete,
             ar_multi_texts=EXCLUDED.ar_multi_texts, ar_mode=EXCLUDED.ar_mode,
-            notify_online=EXCLUDED.notify_online
+            notify_online=EXCLUDED.notify_online,
+            secretary_ai=EXCLUDED.secretary_ai
     """, (
         int(uid_s), u.get("session_string", ""), u.get("phone", ""),
         u.get("base_name", ""), u.get("timezone", DEFAULT_TZ),
@@ -265,6 +308,7 @@ def save_user(uid_s):
         json.dumps(u.get("ar_multi_texts", []), ensure_ascii=False),
         u.get("ar_mode", "single"),
         json.dumps(u.get("notify_online", []), ensure_ascii=False),
+        u.get("secretary_ai", False),
     ))
     cur.close()
 
@@ -485,6 +529,7 @@ NEW_USER_DEFAULTS = {
     "auto_reply_enabled": False, "auto_reply_text": "", "auto_reply_cooldown": 3600,
     "auto_reply_sent_to": {}, "clock_enabled": True, "name_font_style": "normal",
     "secretary_enabled": False, "secretary_text": "", "secretary_sent_to": {},
+    "secretary_ai": False,
     "muted_users": [], "pv_lock": False, "typing_mode": False, "game_mode": False,
     "keyword_filters": False, "no_read": False, "anti_delete": False,
     "ar_multi_texts": [], "ar_mode": "single", "notify_online": [],
@@ -841,19 +886,31 @@ def register_incoming_handler(uid, c):
                     pass
                 return
 
-            if u.get("secretary_enabled") and u.get("secretary_text"):
+            if u.get("secretary_enabled"):
                 sent_to = u.get("secretary_sent_to", {})
                 if str(sender_id) not in sent_to:
-                    try:
-                        await event.reply(u["secretary_text"])
-                    except FloodWaitError as e:
-                        await asyncio.sleep(e.seconds + 2)
+                    msg_text = event.raw_text or ""
+                    if u.get("secretary_ai"):
+                        # AI mode — call the AI API
+                        ai_reply = await get_ai_response(
+                            u.get("secretary_text", ""),
+                            msg_text or "(کاربر بدون متن ارسال کرده)"
+                        )
+                        reply_text = ai_reply
+                    else:
+                        reply_text = u.get("secretary_text", "")
+
+                    if reply_text:
                         try:
-                            await event.reply(u["secretary_text"])
+                            await event.reply(reply_text)
+                        except FloodWaitError as e:
+                            await asyncio.sleep(e.seconds + 2)
+                            try:
+                                await event.reply(reply_text)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
-                    except Exception:
-                        pass
                     sent_to[str(sender_id)] = True
                     db[uid_s]["secretary_sent_to"] = sent_to
                     save_user(uid_s)
@@ -1299,14 +1356,30 @@ async def _cmd_secretary(uid, event, arg):
         on = u.get("secretary_enabled", False)
         txt = u.get("secretary_text", "")
         cnt = len(u.get("secretary_sent_to", {}))
+        ai = u.get("secretary_ai", False)
         await event.edit(
             f"🤖 **منشی**\n\n"
             f"وضعیت: {'✅ روشن' if on else '❌ خاموش'}\n"
-            f"متن: `{txt or 'تنظیم نشده'}`\n"
+            f"mode: {'🧠 AI' if ai else '📝 متن ثابت'}\n"
+            f"متن/پرامپت: `{txt or 'تنظیم نشده'}`\n"
             f"پاسخ داده شده: `{cnt}` نفر\n\n"
             "`/secretary متن` — تنظیم و روشن\n"
             "`/secretary on` — روشن\n`/secretary off` — خاموش\n"
+            "`/secretary ai on` — حالت AI\n`/secretary ai off` — حالت متن ثابت\n"
             "`/secretary reset` — ریست تاریخچه")
+        return
+    if arg.lower() == "ai on":
+        db[uid_s]["secretary_ai"] = True
+        if not db[uid_s].get("secretary_text"):
+            db[uid_s]["secretary_text"] = AI_SYSTEM_DEFAULT
+        db[uid_s]["secretary_enabled"] = True
+        save_user(uid_s)
+        await event.edit("🧠 حالت AI منشی روشن شد!\n\nمتن فعلی به عنوان system prompt استفاده میشه.\nبرای تغییر: `/secretary متن پرامپت جدید`")
+        return
+    if arg.lower() == "ai off":
+        db[uid_s]["secretary_ai"] = False
+        save_user(uid_s)
+        await event.edit("📝 حالت متن ثابت منشی فعال شد.")
         return
     if arg == "on":
         if not db[uid_s].get("secretary_text"):
@@ -1327,7 +1400,8 @@ async def _cmd_secretary(uid, event, arg):
         db[uid_s]["secretary_text"] = arg[:500]
         db[uid_s]["secretary_enabled"] = True
         save_user(uid_s)
-        await event.edit(f"✅ منشی تنظیم شد:\n\n`{arg[:500]}`")
+        mode = "🧠 AI" if db[uid_s].get("secretary_ai") else "📝 متن ثابت"
+        await event.edit(f"✅ منشی تنظیم شد ({mode}):\n\n`{arg[:500]}`")
 
 
 async def _cmd_typing(uid, event):
@@ -1927,7 +2001,9 @@ async def _cmd_help_self(uid, event):
 
         f"━━ 🤖 منشی [{st('secretary_enabled')}] ━━\n"
         "`/secretary متن پیام` — تنظیم و روشن\n"
-        "`/secretary on` — روشن\n`/secretary off` — خاموش\n`/secretary reset` — ریست\n"
+        "`/secretary on` — روشن\n`/secretary off` — خاموش\n"
+        "`/secretary ai on` — حالت AI 🧠\n`/secretary ai off` — حالت متن ثابت\n"
+        "`/secretary reset` — ریست\n"
         "هر کاربر فقط یک‌بار پاسخ می‌گیره\n\n"
 
         f"━━ 🔒 قفل پی‌وی [{st('pv_lock')}] ━━\n"
@@ -2410,13 +2486,16 @@ async def run_bot():
         u = db.get(str(uid), {})
         return ("━━━ 🤖 منشی ━━━\n\n"
                 f"وضعیت: {'✅' if u.get('secretary_enabled') else '❌'}\n"
+                f"mode: {'🧠 AI' if u.get('secretary_ai') else '📝 متن ثابت'}\n"
                 f"متن: `{u.get('secretary_text') or 'تنظیم نشده'}`\n"
                 f"پاسخ داده: `{len(u.get('secretary_sent_to', {}))}` نفر")
 
     def sec_kb(uid):
         on = db.get(str(uid), {}).get("secretary_enabled", False)
+        ai = db.get(str(uid), {}).get("secretary_ai", False)
         return [
             [Button.inline("✏️ متن منشی", b"sec_set_text")],
+            [Button.inline("🧠 AI: " + ("✅" if ai else "❌"), b"sec_ai_off" if ai else b"sec_ai_on")],
             [Button.inline("🔴 خاموش" if on else "🟢 روشن", b"sec_off" if on else b"sec_on")],
             [Button.inline("🗑 ریست", b"sec_reset"), Button.inline("◀️ بازگشت", b"back")],
         ]
@@ -2998,6 +3077,27 @@ async def run_bot():
             db[uid_s]["secretary_sent_to"] = {}
             save_user(uid_s)
         await event.respond("🗑 ریست شد.")
+        await event.respond(sec_info(event.sender_id), buttons=sec_kb(event.sender_id))
+
+    @bot.on(events.CallbackQuery(data=b"sec_ai_on"))
+    async def cb_sec_ai_on(event):
+        await event.answer()
+        uid_s = str(event.sender_id)
+        db[uid_s]["secretary_ai"] = True
+        if not db[uid_s].get("secretary_text"):
+            db[uid_s]["secretary_text"] = AI_SYSTEM_DEFAULT
+        db[uid_s]["secretary_enabled"] = True
+        save_user(uid_s)
+        await event.respond("🧠 حالت AI روشن شد!")
+        await event.respond(sec_info(event.sender_id), buttons=sec_kb(event.sender_id))
+
+    @bot.on(events.CallbackQuery(data=b"sec_ai_off"))
+    async def cb_sec_ai_off(event):
+        await event.answer()
+        uid_s = str(event.sender_id)
+        db[uid_s]["secretary_ai"] = False
+        save_user(uid_s)
+        await event.respond("📝 حالت متن ثابت فعال شد.")
         await event.respond(sec_info(event.sender_id), buttons=sec_kb(event.sender_id))
 
     # ── keyword menu ────────────────────────────
