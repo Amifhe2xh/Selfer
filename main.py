@@ -3685,13 +3685,28 @@ async def run_bot():
                         conv[uid]["step"] = "2fa"
                         await event.respond("🔒 رمز دو مرحله‌ای:")
                         return
+                    elif "expired" in err:
+                        # Code expired — likely DC migration. Request new code automatically.
+                        log.info("Code expired, requesting new code after DC migration...")
+                        try:
+                            await tmp.disconnect()
+                        except Exception:
+                            pass
+                        try:
+                            tmp2 = TelegramClient(StringSession(), API_ID, API_HASH)
+                            await tmp2.connect()
+                            res = await tmp2.send_code_request(conv[uid]["phone"])
+                            conv[uid]["temp"] = tmp2
+                            conv[uid]["hash"] = res.phone_code_hash
+                            await event.respond("🔄 سرور تلگرام عوض شد!\n📨 کد جدید رو بفرست:")
+                            return
+                        except Exception as retry_err:
+                            log.error("Retry code request failed: %s", retry_err)
+                            await event.respond(f"❌ خطا در درخواست کد جدید: `{retry_err}`\nشماره رو دوباره بفرست.")
+                            conv.pop(uid, None)
+                            return
                     elif "flood" in err or "wait" in err:
                         await event.respond("⏳ تعداد درخواست‌ها زیاده. چند دقیقه صبر کن و دوباره امتحان کن.")
-                    elif "expired" in err:
-                        await event.respond("⏰ کد تایید منقضی شده!\n\n📌 برای دریافت کد جدید:\nشماره تلفنت رو دوباره بفرست.")
-                        conv[uid]["step"] = "phone"
-                        conv[uid].pop("hash", None)
-                        return
                     elif "phone" in err and ("occupied" in err or "already" in err):
                         await event.respond("⚠️ این شماره قبلاً استفاده شده.\nاول از حساب قبلی خارج شو (Settings > Devices > Terminate session).")
                     else:
