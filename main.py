@@ -1554,8 +1554,10 @@ async def _cmd_twin(uid, event, arg):
         await event.reply("🔍 در حال اسکن پیام‌ها...")
         try:
             messages = []
+            total_count = 0
             async for msg in event.client.iter_messages(target_chat, limit=500):
-                if msg.sender_id == uid and msg.text and not msg.photo and not msg.voice and not msg.video and not msg.document and not msg.audio and not msg.sticker and not msg.video_note:
+                total_count += 1
+                if msg.sender_id == uid and msg.text:
                     messages.append(msg)
             analysis = await analyze_chat_messages(messages)
             if analysis:
@@ -1567,9 +1569,9 @@ async def _cmd_twin(uid, event, arg):
                     db[uid_s]["twin_analysis"] = analysis
                 save_user(uid_s)
                 total = len(messages)
-                await event.reply(f"✅ تحلیل انجام شد! ({total} پیام اسکن شد)\n\n📊 **نتیجه:**\n{analysis}\n\n💡 میتونی چت‌های دیگه هم اسکن کنی تا پروفایل دقیق‌تر بشه!")
+                await event.reply(f"✅ تحلیل انجام شد! ({total} پیام متنی از {total_count} پیام کل)\n\n📊 **نتیجه:**\n{analysis}\n\n💡 میتونی چت‌های دیگه هم اسکن کنی تا پروفایل دقیق‌تر بشه!")
             else:
-                await event.reply("⚠️ پیام کافی برای تحلیل پیدا نشد.")
+                await event.reply(f"⚠️ پیام متنی کافی پیدا نشد.\n(کل: {total_count} | متنی: {len(messages)})")
         except Exception as e:
             log.error("Twin scan error: %s", e)
             await event.reply("❌ خطا در اسکن پیام‌ها.")
