@@ -2559,6 +2559,15 @@ async def silent_unblock_user(uid, target_id):
 async def selfbot_worker(uid, bot_ref):
     uid_s = str(uid)
     u = db[uid_s]
+
+    # Disconnect existing client if any
+    if uid in clients:
+        try:
+            await clients[uid].disconnect()
+        except Exception:
+            pass
+        del clients[uid]
+
     c = TelegramClient(StringSession(u["session_string"]), API_ID, API_HASH)
     try:
         await c.start()
@@ -3660,10 +3669,17 @@ async def run_bot():
                 try:
                     await tmp.sign_in(phone=conv[uid]["phone"], code=code, phone_code_hash=conv[uid]["hash"])
                 except Exception as e:
-                    if "password" in str(e).lower():
+                    err = str(e).lower()
+                    if "password" in err or "2fa" in err:
                         conv[uid]["step"] = "2fa"
                         await event.respond("🔒 رمز دو مرحله‌ای:")
                         return
+                    elif "flood" in err or "wait" in err:
+                        await event.respond("⏳ تعداد درخواست‌ها زیاده. چند دقیقه صبر کن و دوباره امتحان کن.")
+                    elif "phone" in err and ("occupied" in err or "already" in err):
+                        await event.respond("⚠️ این شماره قبلاً استفاده شده.\nاول از حساب قبلی خارج شو (Settings > Devices > Terminate session).")
+                    else:
+                        await event.respond(f"❌ خطا: `{e}`")
                     try:
                         await tmp.disconnect()
                     except Exception:
