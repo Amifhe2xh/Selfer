@@ -87,6 +87,117 @@ async def get_ai_response(system_prompt: str, user_message: str) -> str:
 
 
 # ═══════════════════════════════════════════════════
+# DIGITAL TWIN
+# ═══════════════════════════════════════════════════
+TWIN_QUESTIONS = [
+    ("name", "اسمت چیه؟"),
+    ("age", "چند سالته؟"),
+    ("city", "کجایی هستی؟"),
+    ("job", "شغلت چیه؟ (یا دانشجوی چی هستی؟)"),
+    ("hobbies", "چه کارایی دوست داری انجام بدی؟"),
+    ("fav_food", "غذای مورد علاقت؟"),
+    ("fav_music", "چه موزیکی گوش میدی؟"),
+    ("fav_movie", "فیلم یا سریال مورد علاقت؟"),
+    ("personality", "چند تا صفت که خودت میدونی بنویس (مثلاً: شوخ، آرام، عصبانی)"),
+    ("style", "سبک حرف زدنت چطوره؟ (صمیمی/رسمی/طنز/کوتاه)"),
+    ("common_words", "چه کلماتی زیاد استفاده میکنی؟"),
+    ("common_emojis", "ایموجی‌هایی که زیاد استفاده میکنی؟"),
+    ("angry_at", "چه چیزی عصبانیت میکنه؟"),
+    ("happy_at", "چه چیزی خوشحالیت میکنه？"),
+    ("dream", "بزرگترین آرزوت چیه؟"),
+    ("motto", "یه جمله خاص که زیاد تکرار میکنی بنویس"),
+]
+
+
+async def build_twin_prompt(uid_s):
+    """Build system prompt from twin profile + chat analysis."""
+    u = db.get(uid_s, {})
+    profile = u.get("twin_profile", {})
+    analysis = u.get("twin_analysis", "")
+
+    if not profile and not analysis:
+        return None
+
+    lines = ["تو یک کلون دیجیتال هستی. باید دقیقاً مثل صاحبت صحبت کنی.", ""]
+
+    if profile:
+        lines.append("=== اطلاعات شخصی ===")
+        for key, val in profile.items():
+            if val:
+                lines.append(f"- {key}: {val}")
+        lines.append("")
+
+    if analysis:
+        lines.append("=== سبک صحبت (تحلیل شده از چت‌ها) ===")
+        lines.append(analysis)
+        lines.append("")
+
+    lines.append("قوانین:")
+    lines.append("- دقیقاً مثل صاحبت حرف بزن")
+    lines.append("- همون کلمات و ایموجی‌ها رو استفاده کن")
+    lines.append("- اگه صاحبت فارسی حرف میزنه، فارسی جواب بده")
+    lines.append("- اگه صاحبت انگلیسی حرف میزنه، انگلیسی جواب بده")
+    lines.append("- لحن و سبک صحبت دقیقاً مثل صاحبت باشه")
+
+    return "\n".join(lines)
+
+
+async def analyze_chat_messages(messages):
+    """Analyze messages to extract speaking patterns."""
+    if not messages:
+        return ""
+
+    texts = [m.text for m in messages if m.text and len(m.text) > 2]
+    if not texts:
+        return ""
+
+    # common words (top 10)
+    word_freq = {}
+    for t in texts:
+        for w in t.split():
+            w = w.lower().strip("،.؟!():")
+            if len(w) > 1:
+                word_freq[w] = word_freq.get(w, 0) + 1
+    common = sorted(word_freq.items(), key=lambda x: -x[1])[:10]
+
+    # emojis
+    import unicodedata
+    emojis = []
+    for t in texts:
+        for ch in t:
+            if unicodedata.category(ch) in ("So", "Sk"):
+                emojis.append(ch)
+    emoji_freq = {}
+    for e in emojis:
+        emoji_freq[e] = emoji_freq.get(e, 0) + 1
+    top_emojis = sorted(emoji_freq.items(), key=lambda x: -x[1])[:5]
+
+    # avg length
+    avg_len = sum(len(t) for t in texts) // len(texts)
+
+    # style detection
+    has_informal = any(w in " ".join(texts).lower() for w in ["خخخ", "ااا", "یعنی", "بلا", "والا", "دیگه", "یورا"])
+    has_english = any(w in " ".join(texts).lower() for w in ["lol", "ok", "hey", "thanks", "yes", "no"])
+
+    lines = []
+    if common:
+        lines.append(f"کلمات پرتکرار: {', '.join(c[0] for c in common)}")
+    if top_emojis:
+        lines.append(f"ایموجی‌های مورد علاقه: {' '.join(e[0] for e in top_emojis)}")
+    lines.append(f"میانگین طول پیام: {avg_len} کاراکتر")
+    if has_informal:
+        lines.append("سبک صحبت: غیررسمی و صمیمی")
+    if has_english:
+        lines.append("کلمات انگلیسی زیاد استفاده میکنه")
+    if avg_len < 20:
+        lines.append("پیام‌ها کوتاه و مختصر مینویسه")
+    elif avg_len > 100:
+        lines.append("پیام‌ها بلند و توضیحی مینویسه")
+
+    return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════
 # POSTGRES DATABASE
 # ═══════════════════════════════════════════════════
 _db_conn = None
@@ -149,6 +260,10 @@ def init_db():
         ("ar_mode", "TEXT NOT NULL DEFAULT 'single'"),
         ("notify_online", "TEXT NOT NULL DEFAULT '[]'"),
         ("secretary_ai", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("twin_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("twin_profile", "TEXT NOT NULL DEFAULT '{}'"),
+        ("twin_analysis", "TEXT NOT NULL DEFAULT ''"),
+        ("twin问卷_done", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ]
     for col_name, col_def in new_columns:
         try:
@@ -269,10 +384,11 @@ def save_user(uid_s):
             auto_reply_enabled, auto_reply_text, auto_reply_cooldown, auto_reply_sent_to,
             clock_enabled, name_font_style, secretary_enabled, secretary_text, secretary_sent_to,
             muted_users, pv_lock, typing_mode, game_mode,
-            keyword_filters, no_read, anti_delete, ar_multi_texts, ar_mode, notify_online,
-            secretary_ai
+            notify_online,
+            secretary_ai,
+            twin_enabled, twin_profile, twin_analysis, twin问卷_done
         ) VALUES (
-            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
+            %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s
         ) ON CONFLICT (uid) DO UPDATE SET
             session_string=EXCLUDED.session_string, phone=EXCLUDED.phone,
             base_name=EXCLUDED.base_name, timezone=EXCLUDED.timezone,
@@ -291,7 +407,9 @@ def save_user(uid_s):
             no_read=EXCLUDED.no_read, anti_delete=EXCLUDED.anti_delete,
             ar_multi_texts=EXCLUDED.ar_multi_texts, ar_mode=EXCLUDED.ar_mode,
             notify_online=EXCLUDED.notify_online,
-            secretary_ai=EXCLUDED.secretary_ai
+            secretary_ai=EXCLUDED.secretary_ai,
+            twin_enabled=EXCLUDED.twin_enabled, twin_profile=EXCLUDED.twin_profile,
+            twin_analysis=EXCLUDED.twin_analysis, twin问卷_done=EXCLUDED.twin问卷_done
     """, (
         int(uid_s), u.get("session_string", ""), u.get("phone", ""),
         u.get("base_name", ""), u.get("timezone", DEFAULT_TZ),
@@ -314,6 +432,10 @@ def save_user(uid_s):
         u.get("ar_mode", "single"),
         json.dumps(u.get("notify_online", []), ensure_ascii=False),
         u.get("secretary_ai", False),
+        u.get("twin_enabled", False),
+        json.dumps(u.get("twin_profile", {}), ensure_ascii=False),
+        u.get("twin_analysis", ""),
+        u.get("twin问卷_done", False),
     ))
     cur.close()
 
@@ -535,6 +657,7 @@ NEW_USER_DEFAULTS = {
     "auto_reply_sent_to": {}, "clock_enabled": True, "name_font_style": "normal",
     "secretary_enabled": False, "secretary_text": "", "secretary_sent_to": {},
     "secretary_ai": False,
+    "twin_enabled": False, "twin_profile": {}, "twin_analysis": "", "twin问卷_done": False,
     "muted_users": [], "pv_lock": False, "typing_mode": False, "game_mode": False,
     "keyword_filters": False, "no_read": False, "anti_delete": False,
     "ar_multi_texts": [], "ar_mode": "single", "notify_online": [],
@@ -895,11 +1018,24 @@ def register_incoming_handler(uid, c):
                 sent_to = u.get("secretary_sent_to", {})
                 msg_text = event.raw_text or ""
                 if u.get("secretary_ai"):
-                    # AI mode — call the AI API
-                    ai_reply = await get_ai_response(
-                        u.get("secretary_text", ""),
-                        msg_text or "(کاربر بدون متن ارسال کرده)"
-                    )
+                    # AI mode — check if twin is active
+                    if u.get("twin_enabled"):
+                        twin_prompt = await build_twin_prompt(uid_s)
+                        if twin_prompt:
+                            ai_reply = await get_ai_response(
+                                twin_prompt,
+                                msg_text or "(کاربر بدون متن ارسال کرده)"
+                            )
+                        else:
+                            ai_reply = await get_ai_response(
+                                u.get("secretary_text", ""),
+                                msg_text or "(کاربر بدون متن ارسال کرده)"
+                            )
+                    else:
+                        ai_reply = await get_ai_response(
+                            u.get("secretary_text", ""),
+                            msg_text or "(کاربر بدون متن ارسال کرده)"
+                        )
                     reply_text = ai_reply
                 else:
                     reply_text = u.get("secretary_text", "")
@@ -1347,6 +1483,135 @@ async def _cmd_pvlock(uid, event, arg):
         db[uid_s]["pv_lock"] = False
         save_user(uid_s)
         await event.edit("🔓 قفل پی‌وی خاموش شد.")
+
+
+async def _cmd_twin(uid, event, arg):
+    uid_s = str(uid)
+    u = db.get(uid_s, {})
+    arg = arg.strip().lower()
+
+    if arg == "start" or arg == "شروع":
+        # Start questionnaire
+        db[uid_s]["_twin_q_step"] = 0
+        db[uid_s]["_twin_q_answers"] = {}
+        save_user(uid_s)
+        key, question = TWIN_QUESTIONS[0]
+        await event.reply(f"🤖 **ساخت Digital Twin**\n\n{question}\n\n(۱/{len(TWIN_QUESTIONS)})\n\nبرای رد کردن بنویس: skip\nبرای لغو بنویس: /twin cancel")
+        return
+
+    if arg == "cancel" or arg == "لغو":
+        if "_twin_q_step" in db[uid_s]:
+            del db[uid_s]["_twin_q_step"]
+            del db[uid_s]["_twin_q_answers"]
+            save_user(uid_s)
+        await event.reply("❌ پرسشنامه لغو شد.")
+        return
+
+    if arg == "on":
+        if u.get("twin_profile"):
+            db[uid_s]["twin_enabled"] = True
+            save_user(uid_s)
+            await event.reply("🤖 Digital Twin فعال شد!\nحالا ربات مثل تو جواب میده.")
+        else:
+            await event.reply("⚠️ اول پرسشنامه رو پر کن: /twin start")
+        return
+
+    if arg == "off":
+        db[uid_s]["twin_enabled"] = False
+        save_user(uid_s)
+        await event.reply("🔴 Digital Twin غیرفعال شد.")
+        return
+
+    if arg == "profile" or arg == "پروفایل":
+        profile = u.get("twin_profile", {})
+        if not profile:
+            await event.reply("⚠️ هنوز پروفایلی ساخته نشده.\n/twin start")
+            return
+        lines = ["🤖 **پروفایل Digital Twin:**\n"]
+        for key, val in profile.items():
+            if val:
+                lines.append(f"• **{key}**: {val}")
+        analysis = u.get("twin_analysis", "")
+        if analysis:
+            lines.append(f"\n📊 **تحلیل چت:**\n{analysis}")
+        lines.append(f"\nوضعیت: {'✅ فعال' if u.get('twin_enabled') else '❌ غیرفعال'}")
+        await event.reply("\n".join(lines))
+        return
+
+    if arg == "scan" or arg == "اسکن":
+        # Scan chat messages for analysis
+        if not event.is_private:
+            await event.reply("⚠️ این دستور فقط در پیوی ربات کار میکنه.")
+            return
+        await event.reply("🔍 در حال اسکن پیام‌ها...")
+        try:
+            messages = []
+            async for msg in event.client.iter_messages(event.chat_id, limit=100):
+                if msg.sender_id == uid:
+                    messages.append(msg)
+            analysis = await analyze_chat_messages(messages)
+            if analysis:
+                db[uid_s]["twin_analysis"] = analysis
+                save_user(uid_s)
+                await event.reply(f"✅ تحلیل انجام شد!\n\n📊 **نتیجه:**\n{analysis}")
+            else:
+                await event.reply("⚠️ پیام کافی برای تحلیل پیدا نشد.")
+        except Exception as e:
+            log.error("Twin scan error: %s", e)
+            await event.reply("❌ خطا در اسکن پیام‌ها.")
+        return
+
+    if arg == "test" or arg == "تست":
+        profile = u.get("twin_profile", {})
+        if not profile:
+            await event.reply("⚠️ اول پرسشنامه رو پر کن: /twin start")
+            return
+        prompt = await build_twin_prompt(uid_s)
+        if prompt:
+            await event.reply("🧪 **تست Digital Twin**\n\nیه پیام بفرست تا ببینی چطور جواب میده!")
+            db[uid_s]["_twin_test_mode"] = True
+            save_user(uid_s)
+        else:
+            await event.reply("⚠️ پروفایل ناقصه.")
+        return
+
+    if arg == "edit" or arg == "ویرایش":
+        await event.reply(
+            "📝 **ویرایش پروفایل:**\n\n"
+            "برای ویرایش هر فیلد بنویس:\n"
+            "`/twin set name امیر`\n"
+            "`/twin set age 19`\n"
+            "`/twin set personality شوخ، آرام`\n\n"
+            "فیلدها: name, age, city, job, hobbies, fav_food, fav_music, fav_movie, "
+            "personality, style, common_words, common_emojis, angry_at, happy_at, dream, motto"
+        )
+        return
+
+    if arg.startswith("set "):
+        parts = arg[4:].strip().split(" ", 1)
+        if len(parts) == 2:
+            key, val = parts
+            profile = u.get("twin_profile", {})
+            profile[key] = val
+            db[uid_s]["twin_profile"] = profile
+            save_user(uid_s)
+            await event.reply(f"✅ `{key}` = `{val}` ذخیره شد.")
+        else:
+            await event.reply("❌ فرمت: `/twin set field value`")
+        return
+
+    # Default help
+    await event.reply(
+        "🤖 **Digital Twin — دستورات:**\n\n"
+        "• `/twin start` — شروع پرسشنامه\n"
+        "• `/twin scan` — اسکن پیام‌های چت\n"
+        "• `/twin on` — فعال‌سازی\n"
+        "• `/twin off` — غیرفعال\n"
+        "• `/twin profile` — نمایش پروفایل\n"
+        "• `/twin test` — تست شخصیت\n"
+        "• `/twin edit` — ویرایش پروفایل\n"
+        "• `/twin cancel` — لغو پرسشنامه"
+    )
 
 
 async def _cmd_secretary(uid, event, arg):
@@ -2081,6 +2346,41 @@ def register_command_handlers(uid, c):
             return
         if uid in conv or uid in setting_mode:
             return
+
+        # ── Digital Twin: questionnaire flow ──
+        u_local = db.get(uid_s, {})
+        if "_twin_q_step" in u_local and text and not text.startswith("/"):
+            step = u_local["_twin_q_step"]
+            answers = u_local.get("_twin_q_answers", {})
+            if text.lower() == "skip":
+                answers[TWIN_QUESTIONS[step][0]] = ""
+            else:
+                answers[TWIN_QUESTIONS[step][0]] = text
+            step += 1
+            if step >= len(TWIN_QUESTIONS):
+                # questionnaire done
+                db[uid_s]["twin_profile"] = answers
+                db[uid_s]["twin问卷_done"] = True
+                del db[uid_s]["_twin_q_step"]
+                del db[uid_s]["_twin_q_answers"]
+                save_user(uid_s)
+                await event.reply("✅ پرسشنامه تموم شد!\n\n🤖 برای فعال‌سازی: `/twin on`\n🔍 برای اسکن چت: `/twin scan`")
+            else:
+                db[uid_s]["_twin_q_step"] = step
+                db[uid_s]["_twin_q_answers"] = answers
+                save_user(uid_s)
+                key, question = TWIN_QUESTIONS[step]
+                await event.reply(f"{question}\n\n({step+1}/{len(TWIN_QUESTIONS)})\n\nبرای رد کردن بنویس: skip")
+            return
+
+        # ── Digital Twin: test mode ──
+        if u_local.get("_twin_test_mode") and text and not text.startswith("/"):
+            prompt = await build_twin_prompt(uid_s)
+            if prompt:
+                reply = await get_ai_response(prompt, text)
+                await event.reply(reply)
+            return
+
         if text.startswith("/"):
             parts = text.split(maxsplit=1)
             cmd = parts[0].lower().split("@")[0]
@@ -2103,6 +2403,7 @@ def register_command_handlers(uid, c):
                 elif cmd == "/mutelist":await _cmd_mutelist(uid, event)
                 elif cmd == "/pvlock":  await _cmd_pvlock(uid, event, arg)
                 elif cmd == "/secretary": await _cmd_secretary(uid, event, arg)
+                elif cmd == "/twin":     await _cmd_twin(uid, event, arg)
                 elif cmd == "/typing":  await _cmd_typing(uid, event)
                 elif cmd == "/game":    await _cmd_game(uid, event)
                 elif cmd == "/dice":    await _cmd_dice(event)
