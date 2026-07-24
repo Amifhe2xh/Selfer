@@ -63,6 +63,7 @@ async def get_ai_response(system_prompt: str, user_message: str) -> str:
         ],
         "max_tokens": 1024,
         "temperature": 0.7,
+        "stream": False,
     }
     try:
         async with aiohttp.ClientSession() as session:
