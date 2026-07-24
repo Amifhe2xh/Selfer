@@ -114,7 +114,11 @@ async def build_twin_prompt(uid_s):
     u = db.get(uid_s, {})
     profile = u.get("twin_profile", {})
     analysis = u.get("twin_analysis", "")
-
+    if isinstance(profile, str):
+        try:
+            profile = json.loads(profile)
+        except Exception:
+            profile = {}
     if not profile and not analysis:
         return None
 
@@ -1524,6 +1528,11 @@ async def _cmd_twin(uid, event, arg):
 
     if arg == "profile" or arg == "پروفایل":
         profile = u.get("twin_profile", {})
+        if isinstance(profile, str):
+            try:
+                profile = json.loads(profile)
+            except Exception:
+                profile = {}
         if not profile:
             await event.reply("⚠️ هنوز پروفایلی ساخته نشده.\n/twin start")
             return
