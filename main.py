@@ -2386,6 +2386,10 @@ def register_command_handlers(uid, c):
         # ── Digital Twin: questionnaire flow ──
         uid_s_local = str(uid)
         u_local = db.get(uid_s_local, {})
+
+        # DEBUG: log all incoming messages
+        log.info("[DISPATCH] uid=%s chat=%s text=%s keys=%s", uid, event.chat_id, text[:50], list(u_local.keys())[:10])
+
         if "_twin_q_step" in u_local and text and not text.startswith("/"):
             step = u_local["_twin_q_step"]
             answers = u_local.get("_twin_q_answers", {})
