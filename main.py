@@ -2348,7 +2348,8 @@ def register_command_handlers(uid, c):
             return
 
         # ── Digital Twin: questionnaire flow ──
-        u_local = db.get(uid_s, {})
+        uid_s_local = str(uid)
+        u_local = db.get(uid_s_local, {})
         if "_twin_q_step" in u_local and text and not text.startswith("/"):
             step = u_local["_twin_q_step"]
             answers = u_local.get("_twin_q_answers", {})
@@ -2359,23 +2360,23 @@ def register_command_handlers(uid, c):
             step += 1
             if step >= len(TWIN_QUESTIONS):
                 # questionnaire done
-                db[uid_s]["twin_profile"] = answers
-                db[uid_s]["twin问卷_done"] = True
-                del db[uid_s]["_twin_q_step"]
-                del db[uid_s]["_twin_q_answers"]
-                save_user(uid_s)
+                db[uid_s_local]["twin_profile"] = answers
+                db[uid_s_local]["twin问卷_done"] = True
+                del db[uid_s_local]["_twin_q_step"]
+                del db[uid_s_local]["_twin_q_answers"]
+                save_user(uid_s_local)
                 await event.reply("✅ پرسشنامه تموم شد!\n\n🤖 برای فعال‌سازی: `/twin on`\n🔍 برای اسکن چت: `/twin scan`")
             else:
-                db[uid_s]["_twin_q_step"] = step
-                db[uid_s]["_twin_q_answers"] = answers
-                save_user(uid_s)
+                db[uid_s_local]["_twin_q_step"] = step
+                db[uid_s_local]["_twin_q_answers"] = answers
+                save_user(uid_s_local)
                 key, question = TWIN_QUESTIONS[step]
                 await event.reply(f"{question}\n\n({step+1}/{len(TWIN_QUESTIONS)})\n\nبرای رد کردن بنویس: skip")
             return
 
         # ── Digital Twin: test mode ──
         if u_local.get("_twin_test_mode") and text and not text.startswith("/"):
-            prompt = await build_twin_prompt(uid_s)
+            prompt = await build_twin_prompt(uid_s_local)
             if prompt:
                 reply = await get_ai_response(prompt, text)
                 await event.reply(reply)
