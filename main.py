@@ -893,7 +893,9 @@ def register_incoming_handler(uid, c):
 
             if u.get("secretary_enabled"):
                 sent_to = u.get("secretary_sent_to", {})
-                if str(sender_id) not in sent_to:
+                now_ts = time.time()
+                last_reply = sent_to.get(str(sender_id), 0)
+                if now_ts - last_reply >= 10:  # 10 second cooldown
                     msg_text = event.raw_text or ""
                     if u.get("secretary_ai"):
                         # AI mode — call the AI API
@@ -916,10 +918,10 @@ def register_incoming_handler(uid, c):
                                 pass
                         except Exception:
                             pass
-                    sent_to[str(sender_id)] = True
-                    db[uid_s]["secretary_sent_to"] = sent_to
-                    save_user(uid_s)
-                    return
+                        sent_to[str(sender_id)] = now_ts
+                        db[uid_s]["secretary_sent_to"] = sent_to
+                        save_user(uid_s)
+                        return
 
             if u.get("keyword_filters") and event.raw_text:
                 kw_resp = find_kw_response(uid_s, event.raw_text)
