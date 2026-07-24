@@ -3670,13 +3670,14 @@ async def run_bot():
                     await tmp.sign_in(phone=conv[uid]["phone"], code=code, phone_code_hash=conv[uid]["hash"])
                 except Exception as e:
                     err = str(e).lower()
+                    log.error("Sign-in error: %s (raw: %s)", err, e)
                     if "password" in err or "2fa" in err:
                         conv[uid]["step"] = "2fa"
                         await event.respond("🔒 رمز دو مرحله‌ای:")
                         return
                     elif "flood" in err or "wait" in err:
                         await event.respond("⏳ تعداد درخواست‌ها زیاده. چند دقیقه صبر کن و دوباره امتحان کن.")
-                    elif "expired" in err or "code" in err:
+                    elif "expired" in err:
                         await event.respond("⏰ کد تایید منقضی شده!\n\n📌 برای دریافت کد جدید:\nشماره تلفنت رو دوباره بفرست.")
                         conv[uid]["step"] = "phone"
                         conv[uid].pop("hash", None)
@@ -3684,7 +3685,8 @@ async def run_bot():
                     elif "phone" in err and ("occupied" in err or "already" in err):
                         await event.respond("⚠️ این شماره قبلاً استفاده شده.\nاول از حساب قبلی خارج شو (Settings > Devices > Terminate session).")
                     else:
-                        await event.respond(f"❌ خطا: `{e}`")
+                        log.error("Sign-in unknown error: %s", e)
+                        await event.respond(f"❌ خطای ناشناخته:\n`{e}`\n\nشماره رو دوباره بفرست.")
                     try:
                         await tmp.disconnect()
                     except Exception:
