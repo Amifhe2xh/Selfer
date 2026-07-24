@@ -40,7 +40,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 AI_API_BASE = os.environ.get("AI_API_BASE", "https://hermes-railway-production-8d21.up.railway.app/v1")
 AI_API_KEY  = os.environ.get("AI_API_KEY", "sk-6d104f6ab1112776-8seizg-1bb2a0b1")
-AI_MODEL     = os.environ.get("AI_MODEL", "deepseek/deepseek-chat-v3-0324")
+AI_MODEL     = os.environ.get("AI_MODEL", "A")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("service")
