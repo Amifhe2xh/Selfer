@@ -1546,8 +1546,8 @@ async def _cmd_twin(uid, event, arg):
         await event.reply("🔍 در حال اسکن پیام‌ها...")
         try:
             messages = []
-            async for msg in event.client.iter_messages(event.chat_id, limit=100):
-                if msg.sender_id == uid:
+            async for msg in event.client.iter_messages(event.chat_id, limit=500):
+                if msg.sender_id == uid and msg.text and not msg.photo and not msg.voice and not msg.video and not msg.document and not msg.audio and not msg.sticker and not msg.video_note:
                     messages.append(msg)
             analysis = await analyze_chat_messages(messages)
             if analysis:
