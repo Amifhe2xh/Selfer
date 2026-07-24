@@ -3676,6 +3676,11 @@ async def run_bot():
                         return
                     elif "flood" in err or "wait" in err:
                         await event.respond("⏳ تعداد درخواست‌ها زیاده. چند دقیقه صبر کن و دوباره امتحان کن.")
+                    elif "expired" in err or "code" in err:
+                        await event.respond("⏰ کد تایید منقضی شده!\n\n📌 برای دریافت کد جدید:\nشماره تلفنت رو دوباره بفرست.")
+                        conv[uid]["step"] = "phone"
+                        conv[uid].pop("hash", None)
+                        return
                     elif "phone" in err and ("occupied" in err or "already" in err):
                         await event.respond("⚠️ این شماره قبلاً استفاده شده.\nاول از حساب قبلی خارج شو (Settings > Devices > Terminate session).")
                     else:
@@ -3685,7 +3690,6 @@ async def run_bot():
                     except Exception:
                         pass
                     conv.pop(uid, None)
-                    await event.respond(f"❌ خطا: `{e}`")
                     return
                 ss = tmp.session.save()
                 try:
