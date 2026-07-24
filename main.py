@@ -384,7 +384,7 @@ def save_user(uid_s):
             auto_reply_enabled, auto_reply_text, auto_reply_cooldown, auto_reply_sent_to,
             clock_enabled, name_font_style, secretary_enabled, secretary_text, secretary_sent_to,
             muted_users, pv_lock, typing_mode, game_mode,
-            notify_online,
+            keyword_filters, no_read, anti_delete, ar_multi_texts, ar_mode, notify_online,
             secretary_ai,
             twin_enabled, twin_profile, twin_analysis, twin问卷_done
         ) VALUES (
