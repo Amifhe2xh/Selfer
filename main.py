@@ -71,7 +71,11 @@ async def get_ai_response(system_prompt: str, user_message: str) -> str:
                     body = await resp.text()
                     log.error("AI API error %s: %s", resp.status, body[:200])
                     return "❌ مشکلی پیش اومد، لطفاً بعداً دوباره امتحان کن."
-                data = await resp.json()
+                raw = await resp.text()
+                # strip SSE trailer if present
+                if "data: [DONE]" in raw:
+                    raw = raw[:raw.index("data: [DONE]")]
+                data = json.loads(raw)
                 return data["choices"][0]["message"]["content"].strip()
     except asyncio.TimeoutError:
         log.error("AI API timeout")
