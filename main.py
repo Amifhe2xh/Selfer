@@ -3666,6 +3666,16 @@ async def run_bot():
                     await event.respond("❌ کد باید عددی باشه.")
                     return
                 tmp = conv[uid]["temp"]
+                log.info("Sign-in attempt: phone=%s hash=%s code=%s connected=%s", conv[uid]["phone"], conv[uid]["hash"], code, tmp.is_connected())
+                if not tmp.is_connected():
+                    log.warning("Temp client disconnected, reconnecting...")
+                    try:
+                        await tmp.connect()
+                    except Exception as conn_err:
+                        log.error("Reconnect failed: %s", conn_err)
+                        await event.respond("❌ اتصال قطع شد. شماره رو دوباره بفرست.")
+                        conv.pop(uid, None)
+                        return
                 try:
                     await tmp.sign_in(phone=conv[uid]["phone"], code=code, phone_code_hash=conv[uid]["hash"])
                 except Exception as e:
