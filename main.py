@@ -893,35 +893,29 @@ def register_incoming_handler(uid, c):
 
             if u.get("secretary_enabled"):
                 sent_to = u.get("secretary_sent_to", {})
-                now_ts = time.time()
-                last_reply = sent_to.get(str(sender_id), 0)
-                if now_ts - last_reply >= 10:  # 10 second cooldown
-                    msg_text = event.raw_text or ""
-                    if u.get("secretary_ai"):
-                        # AI mode — call the AI API
-                        ai_reply = await get_ai_response(
-                            u.get("secretary_text", ""),
-                            msg_text or "(کاربر بدون متن ارسال کرده)"
-                        )
-                        reply_text = ai_reply
-                    else:
-                        reply_text = u.get("secretary_text", "")
+                msg_text = event.raw_text or ""
+                if u.get("secretary_ai"):
+                    # AI mode — call the AI API
+                    ai_reply = await get_ai_response(
+                        u.get("secretary_text", ""),
+                        msg_text or "(کاربر بدون متن ارسال کرده)"
+                    )
+                    reply_text = ai_reply
+                else:
+                    reply_text = u.get("secretary_text", "")
 
-                    if reply_text:
+                if reply_text:
+                    try:
+                        await event.reply(reply_text)
+                    except FloodWaitError as e:
+                        await asyncio.sleep(e.seconds + 2)
                         try:
                             await event.reply(reply_text)
-                        except FloodWaitError as e:
-                            await asyncio.sleep(e.seconds + 2)
-                            try:
-                                await event.reply(reply_text)
-                            except Exception:
-                                pass
                         except Exception:
                             pass
-                        sent_to[str(sender_id)] = now_ts
-                        db[uid_s]["secretary_sent_to"] = sent_to
-                        save_user(uid_s)
-                        return
+                    except Exception:
+                        pass
+                    return
 
             if u.get("keyword_filters") and event.raw_text:
                 kw_resp = find_kw_response(uid_s, event.raw_text)
