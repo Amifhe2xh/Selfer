@@ -1551,9 +1551,15 @@ async def _cmd_twin(uid, event, arg):
                     messages.append(msg)
             analysis = await analyze_chat_messages(messages)
             if analysis:
-                db[uid_s]["twin_analysis"] = analysis
+                # Append to existing analysis (for multiple scans)
+                existing = u.get("twin_analysis", "")
+                if existing:
+                    db[uid_s]["twin_analysis"] = existing + "\n---\n" + analysis
+                else:
+                    db[uid_s]["twin_analysis"] = analysis
                 save_user(uid_s)
-                await event.reply(f"✅ تحلیل انجام شد!\n\n📊 **نتیجه:**\n{analysis}")
+                total = len(messages)
+                await event.reply(f"✅ تحلیل انجام شد! ({total} پیام اسکن شد)\n\n📊 **نتیجه:**\n{analysis}\n\n💡 میتونی چت‌های دیگه هم اسکن کنی تا پروفایل دقیق‌تر بشه!")
             else:
                 await event.reply("⚠️ پیام کافی برای تحلیل پیدا نشد.")
         except Exception as e:
@@ -1587,6 +1593,15 @@ async def _cmd_twin(uid, event, arg):
         )
         return
 
+    if arg == "reset" or arg == "ریست":
+        db[uid_s]["twin_analysis"] = ""
+        db[uid_s]["twin_profile"] = {}
+        db[uid_s]["twin_enabled"] = False
+        db[uid_s]["twin问卷_done"] = False
+        save_user(uid_s)
+        await event.reply("🗑️ پروفایل Digital Twin پاک شد.\n/twin start برای شروع مجدد")
+        return
+
     if arg.startswith("set "):
         parts = arg[4:].strip().split(" ", 1)
         if len(parts) == 2:
@@ -1604,12 +1619,13 @@ async def _cmd_twin(uid, event, arg):
     await event.reply(
         "🤖 **Digital Twin — دستورات:**\n\n"
         "• `/twin start` — شروع پرسشنامه\n"
-        "• `/twin scan` — اسکن پیام‌های چت\n"
+        "• `/twin scan` — اسکن پیام‌های چت (چند بار مجاز!)\n"
         "• `/twin on` — فعال‌سازی\n"
         "• `/twin off` — غیرفعال\n"
         "• `/twin profile` — نمایش پروفایل\n"
         "• `/twin test` — تست شخصیت\n"
         "• `/twin edit` — ویرایش پروفایل\n"
+        "• `/twin reset` — پاک کردن پروفایل\n"
         "• `/twin cancel` — لغو پرسشنامه"
     )
 
